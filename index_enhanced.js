@@ -12,7 +12,7 @@ app.use(express.urlencoded({extended: true}));
 // API endpoint to receive topic and syllabus with AI provider selection
 app.post("/api/submit", async (req, res) => {
   try {
-    const {topic, syllabus, aiProvider = "ollama"} = req.body;
+    const {topic, syllabus, aiProvider = "gemini"} = req.body;
 
     // Validate required fields
     if (!topic || !syllabus) {
