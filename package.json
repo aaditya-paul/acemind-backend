@@ -1,0 +1,31 @@
+{
+  "name": "acemind-backend",
+  "version": "1.0.0",
+  "description": "Backend API for AceMind application",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "@google/genai": "^1.12.0",
+    "@google/generative-ai": "^0.24.1",
+    "@langchain/core": "^0.3.62",
+    "@langchain/ollama": "^0.2.3",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^4.18.2",
+    "langchain": "^0.3.29",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "keywords": [
+    "express",
+    "api",
+    "backend"
+  ],
+  "author": "",
+  "license": "ISC"
+}
