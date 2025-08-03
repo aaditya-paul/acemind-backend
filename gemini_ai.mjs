@@ -23,7 +23,7 @@ function adaptAIResponse(output) {
     units: output.units.map((u) => ({
       unit_num: String(u.unit_num),
       title: u.title,
-      duration: String(u.duration),
+      duration: Number(u.duration),
       sub_topics: u.sub_topics,
     })),
   };
@@ -42,7 +42,9 @@ Use these exact keys:
 - course_title (string)
 - course_description (string)
 - course_objectives (array of strings)
-- units (array of objects with keys: unit_num (number), title, duration (string), sub_topics (array))
+- units (array of objects with keys: unit_num (number), title, duration (number), sub_topics (array))
+
+the subtopic should be one or two words, a summarized version of the subtopic.
 
 Wrap the result inside \`\`\`json code block.
 

@@ -31,7 +31,7 @@ export const MobileComputingSyllabusSchema = z.object({
     z.object({
       unit_num: z.string(),
       title: z.string(),
-      duration: z.string(),
+      duration: z.number(),
       sub_topics: z.array(z.string()),
     })
   ),
