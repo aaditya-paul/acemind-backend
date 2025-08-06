@@ -44,7 +44,7 @@ Use these exact keys:
 - course_objectives (array of strings)
 - units (array of objects with keys: unit_num (number), title, duration (number), sub_topics (array))
 
-the subtopic should be one or two words, a summarized version of the subtopic.
+the subtopic should be short, a summarized version of the subtopic but it should be clear and concise if possible keep it to one or two words but keep the specifics.
 
 Wrap the result inside \`\`\`json code block.
 

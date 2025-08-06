@@ -9,6 +9,83 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({extended: true}));
 
+app.post("/api/notes", async (req, res) => {
+  const {topic, subtopic, syllabus, aiProvider = "gemini"} = req.body;
+  try {
+    // Validate required fields
+    if (!topic || !syllabus) {
+      return res.status(400).json({
+        success: false,
+        message: "Both topic and syllabus are required fields",
+      });
+    }
+
+    // Validate AI provider
+    if (!["ollama", "gemini"].includes(aiProvider.toLowerCase())) {
+      return res.status(400).json({
+        success: false,
+        message: "AI provider must be either 'ollama' or 'gemini'",
+      });
+    }
+
+    // Process the data (you can add your logic here)
+    console.log("Received data:");
+    console.log("Syllabus:", syllabus);
+    console.log("Topic:", topic);
+    console.log("Subtopic:", subtopic);
+    console.log("AI Provider:", aiProvider);
+
+    try {
+      let aiResponse;
+      if (aiProvider.toLowerCase() === "gemini") {
+        // Use Gemini AI
+        const {GetNotesGemini} = await import("./get_notes_gemini.mjs");
+        aiResponse = await GetNotesGemini(topic, syllabus, subtopic);
+        console.log("Gemini AI Response:", aiResponse);
+      } else {
+        // Use Ollama (default)
+        const {GetNotesOllama} = await import("./get_notes_ollama.mjs");
+        aiResponse = await GetNotesOllama(topic, syllabus);
+        if (!aiResponse.success) {
+          console.log("failed ");
+
+          return res.status(500).json({
+            success: false,
+            message: "Failed to fetch notes from Ollama AI",
+            error: aiResponse.error,
+          });
+        }
+        console.log("Ollama AI Response:", aiResponse);
+      }
+
+      // Send success response with AI data
+      res.json({
+        success: true,
+        message: `Data received and processed successfully using ${aiProvider}`,
+        data: {
+          topic,
+          syllabus,
+          aiProvider,
+          aiResponse,
+        },
+      });
+    } catch (aiError) {
+      console.error(`Error with ${aiProvider} AI processing:`, aiError);
+      // Send error response when AI fails
+      return res.status(500).json({
+        success: false,
+        message: `Failed to process request with ${aiProvider} AI`,
+        error: aiError.message,
+      });
+    }
+  } catch (error) {
+    console.error("Error processing request:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+});
 // API endpoint to receive topic and syllabus with AI provider selection
 app.post("/api/submit", async (req, res) => {
   try {
@@ -38,11 +115,14 @@ app.post("/api/submit", async (req, res) => {
 
     try {
       let aiResponse;
-
+      let SyllabusContext;
       if (aiProvider.toLowerCase() === "gemini") {
         // Use Gemini AI
         const {GetAiOutputGemini} = await import("./gemini_ai.mjs");
+        const {GetSyllabusContext} = await import("./getSyllabusContext.mjs");
         aiResponse = await GetAiOutputGemini(topic, syllabus);
+        SyllabusContext = await GetSyllabusContext(topic, syllabus);
+
         console.log("Gemini AI Response:", aiResponse);
       } else {
         // Use Ollama (default)
@@ -60,6 +140,7 @@ app.post("/api/submit", async (req, res) => {
           syllabus,
           aiProvider,
           aiResponse,
+          syllabusContext: SyllabusContext ? SyllabusContext.text : null,
         },
       });
     } catch (aiError) {
@@ -192,6 +273,7 @@ app.listen(port, "0.0.0.0", () => {
   console.log(
     `Submit endpoint (flexible): http://localhost:${port}/api/submit`
   );
+  console.log(`Submit endpoint (flexible): http://localhost:${port}/api/notes`);
   console.log(
     `Submit endpoint (Ollama): http://localhost:${port}/api/submit-ollama`
   );
