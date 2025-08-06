@@ -13,7 +13,7 @@
 // //   finalExam: z.string(),
 // // });
 
-// export const MobileComputingSyllabusSchema = z.object({
+// export const SyllabusSchema = z.object({
 //   courseTitle: z.string(),
 //   description: z.string(),
 //   objectives: z.array(z.string()),
@@ -23,7 +23,7 @@
 
 import {z} from "zod";
 
-export const MobileComputingSyllabusSchema = z.object({
+export const SyllabusSchema = z.object({
   courseTitle: z.string(),
   description: z.string(),
   objectives: z.array(z.string()),

@@ -1,5 +1,5 @@
 import {GoogleGenAI} from "@google/genai";
-import {MobileComputingSyllabusSchema} from "./ai_outpt_schema.mjs";
+import {SyllabusSchema} from "./ai_outpt_schema.mjs";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -71,7 +71,7 @@ Syllabus: ${syllabus}
     const rawOutput = JSON.parse(rawJsonString);
 
     const adapted = adaptAIResponse(rawOutput);
-    const validated = MobileComputingSyllabusSchema.parse(adapted);
+    const validated = SyllabusSchema.parse(adapted);
 
     console.log("✅ Final Validated Output:\n", validated);
     return validated;

@@ -1,6 +1,6 @@
 import {Ollama} from "@langchain/ollama";
 import {PromptTemplate} from "@langchain/core/prompts";
-import {MobileComputingSyllabusSchema} from "./ai_outpt_schema.mjs"; // Make sure this is correct
+import {SyllabusSchema} from "./ai_outpt_schema.mjs"; // Make sure this is correct
 
 // 🔧 Adapt raw AI response to match your Zod schema
 function adaptAIResponse(output) {
@@ -64,7 +64,7 @@ Syllabus: {syllabus}
     const adapted = adaptAIResponse(rawOutput);
 
     // ✅ Validate with Zod
-    const validated = MobileComputingSyllabusSchema.parse(adapted);
+    const validated = SyllabusSchema.parse(adapted);
 
     console.log("✅ Final Validated Structured Output:\n", validated);
     return validated;
