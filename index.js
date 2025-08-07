@@ -9,8 +9,279 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({extended: true}));
 
+app.post("/api/expand-subtopics", async (req, res) => {
+  const {
+    subtopic,
+    syllabus,
+    topic,
+    unitTitle,
+    count = 4,
+    level = 1,
+    parentContext = null,
+    hierarchyPath = [],
+  } = req.body;
+
+  try {
+    // Validate required fields
+    if (!subtopic || !syllabus || !topic || !unitTitle) {
+      return res.status(400).json({
+        success: false,
+        message: "subtopic, syllabus, topic, and unitTitle are required fields",
+      });
+    }
+
+    console.log(`🚀 API: Expanding Level ${level} subtopic: "${subtopic}"`);
+    console.log(`📍 Hierarchy Path: ${hierarchyPath.join(" > ")}`);
+    console.log(`👤 Parent Context: ${parentContext || "None"}`);
+
+    // Import the function dynamically
+    const {GetExpandedSubtopics} = await import("./getExpandedSubtopics.mjs");
+
+    // Create enhanced context for AI to understand hierarchy
+    let enhancedSubtopic = subtopic;
+    let contextualDescription = "";
+
+    if (parentContext && level > 1) {
+      enhancedSubtopic = `${parentContext} > ${subtopic}`;
+      contextualDescription = `This is a level ${level} expansion of "${subtopic}" within the context of "${parentContext}".`;
+    } else {
+      contextualDescription = `This is a level ${level} expansion of the main subtopic "${subtopic}".`;
+    }
+
+    // Add level context for better AI understanding
+    const contextualPrompt =
+      level > 1
+        ? `${contextualDescription} Generate ${count} more specific sub-topics for: "${enhancedSubtopic}"`
+        : subtopic;
+
+    const expandedSubtopics = await GetExpandedSubtopics(
+      contextualPrompt,
+      syllabus,
+      topic,
+      unitTitle,
+      count,
+      level, // Pass level to AI for context
+      parentContext // Pass parent context
+    );
+
+    // Transform the response with enhanced metadata
+    const responseData = {
+      subtopics: expandedSubtopics,
+      metadata: {
+        level: level,
+        parentContext: parentContext,
+        hierarchyPath: hierarchyPath,
+        originalSubtopic: subtopic,
+        enhancedSubtopic: enhancedSubtopic,
+        canExpandFurther: level < 10, // Reasonable depth limit
+        totalGenerated: expandedSubtopics.length,
+        generatedAt: new Date().toISOString(),
+        apiVersion: "2.0",
+      },
+    };
+
+    console.log(
+      `✅ API: Successfully generated ${expandedSubtopics.length} level-${level} subtopics`
+    );
+
+    // Send success response
+    res.json({
+      success: true,
+      message: `Level ${level} expanded subtopics generated successfully for "${subtopic}"`,
+      data: responseData,
+      subtopics: expandedSubtopics, // For backward compatibility
+    });
+  } catch (error) {
+    console.error(
+      `❌ API Error in /api/expand-subtopics (Level ${level}):`,
+      error
+    );
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error while generating expanded subtopics",
+      error: error.message,
+      level: level,
+      subtopic: subtopic,
+    });
+  }
+});
+
+// New endpoint for expanding a specific subtopic node
+app.post("/api/expand-subtopic-node", async (req, res) => {
+  const {
+    subtopicId,
+    subtopicTitle,
+    parentSubtopic,
+    syllabus,
+    topic,
+    unitTitle,
+    level = 1,
+    count = 4,
+  } = req.body;
+
+  try {
+    // Validate required fields
+    if (!subtopicTitle || !syllabus || !topic || !unitTitle) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "subtopicTitle, syllabus, topic, and unitTitle are required fields",
+      });
+    }
+
+    // Import the function dynamically
+    const {GetExpandedSubtopics} = await import("./getExpandedSubtopics.mjs");
+    const expandedSubtopics = await GetExpandedSubtopics(
+      subtopicTitle,
+      syllabus,
+      topic,
+      unitTitle,
+      count
+    );
+
+    // Transform the flat array into nested structure for this specific subtopic
+    const nestedSubtopics = expandedSubtopics.map((childSubtopic, index) => ({
+      id: `${subtopicId || subtopicTitle}-child-${index + 1}`,
+      title: childSubtopic,
+      children: [],
+      hasChildren: level < 3, // Limit expansion to 3 levels to prevent infinite nesting
+      level: level + 1,
+      parentId: subtopicId || subtopicTitle,
+    }));
+
+    // Send success response with children for this specific node
+    res.json({
+      success: true,
+      message: "Subtopic expanded successfully",
+      data: {
+        parentId: subtopicId || subtopicTitle,
+        parentTitle: subtopicTitle,
+        children: nestedSubtopics,
+        level: level,
+      },
+    });
+  } catch (error) {
+    console.error("Error in /api/expand-subtopic-node:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+});
+
+// Comprehensive endpoint for managing subtopic tree structure
+app.post("/api/subtopic-tree", async (req, res) => {
+  const {
+    action, // "expand" or "get_children"
+    subtopic,
+    syllabus,
+    topic,
+    unitTitle,
+    parentPath = [], // Array of parent subtopics for context
+    level = 0,
+    maxLevel = 3,
+    count = 4,
+  } = req.body;
+
+  try {
+    // Validate required fields
+    if (!subtopic || !syllabus || !topic || !unitTitle || !action) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "subtopic, syllabus, topic, unitTitle, and action are required fields",
+      });
+    }
+
+    if (!["expand", "get_children"].includes(action)) {
+      return res.status(400).json({
+        success: false,
+        message: "action must be either 'expand' or 'get_children'",
+      });
+    }
+
+    // Import the function dynamically
+    const {GetExpandedSubtopics} = await import("./getExpandedSubtopics.mjs");
+
+    // Build context for better AI understanding of the subtopic hierarchy
+    const contextualSubtopic =
+      parentPath.length > 0
+        ? `${parentPath.join(" -> ")} -> ${subtopic}`
+        : subtopic;
+
+    const expandedSubtopics = await GetExpandedSubtopics(
+      contextualSubtopic,
+      syllabus,
+      topic,
+      unitTitle,
+      count
+    );
+
+    // Create the tree node structure
+    const createTreeNode = (title, index, currentLevel) => ({
+      id: `${parentPath.join("-")}-${subtopic}-${index + 1}`.replace(/^-/, ""),
+      title: title,
+      children: [],
+      isExpanded: false,
+      hasChildren: currentLevel < maxLevel,
+      level: currentLevel + 1,
+      parentPath: [...parentPath, subtopic],
+      canExpand: currentLevel < maxLevel,
+    });
+
+    const treeNodes = expandedSubtopics.map((title, index) =>
+      createTreeNode(title, index, level)
+    );
+
+    // Response structure
+    const response = {
+      success: true,
+      message: `Subtopic tree ${action} successful`,
+      data: {
+        action: action,
+        parent: {
+          id:
+            parentPath.length > 0
+              ? `${parentPath.join("-")}-${subtopic}`
+              : subtopic,
+          title: subtopic,
+          level: level,
+          path: [...parentPath, subtopic],
+        },
+        children: treeNodes,
+        metadata: {
+          level: level,
+          maxLevel: maxLevel,
+          canExpandFurther: level < maxLevel,
+          totalChildren: treeNodes.length,
+          parentPath: parentPath,
+        },
+      },
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error("Error in /api/subtopic-tree:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+});
+
 app.post("/api/notes", async (req, res) => {
-  const {topic, subtopic, syllabus, aiProvider = "gemini"} = req.body;
+  const {
+    topic,
+    subtopic,
+    syllabus,
+    aiProvider = "gemini",
+    level = 1,
+    hierarchyPath = [],
+    parentContext = null,
+  } = req.body;
+
   try {
     // Validate required fields
     if (!topic || !syllabus) {
@@ -28,22 +299,59 @@ app.post("/api/notes", async (req, res) => {
       });
     }
 
-    // Process the data (you can add your logic here)
-    console.log("Received data:");
-    console.log("Syllabus:", syllabus);
-    console.log("Topic:", topic);
-    console.log("Subtopic:", subtopic);
-    console.log("AI Provider:", aiProvider);
+    console.log(
+      `📚 API: Generating notes for Level ${level} subtopic: "${subtopic}"`
+    );
+    console.log(`📍 Hierarchy Path: ${hierarchyPath.join(" > ")}`);
+    console.log(`👤 Parent Context: ${parentContext || "None"}`);
+    console.log(`🤖 AI Provider: ${aiProvider}`);
 
     try {
       let aiResponse;
       if (aiProvider.toLowerCase() === "gemini") {
-        // Use Gemini AI
+        // Use Gemini AI with hierarchical context
         const {GetNotesGemini} = await import("./get_notes_gemini.mjs");
-        aiResponse = await GetNotesGemini(topic, syllabus, subtopic);
-        console.log("Gemini AI Response:", aiResponse);
+
+        // Create context-aware subtopic for better AI understanding
+        let contextualSubtopic = subtopic || "General Overview";
+        let contextualDescription = "";
+
+        if (parentContext && level > 1) {
+          contextualSubtopic = `${parentContext} > ${subtopic}`;
+          contextualDescription = `This content is for level ${level} subtopic "${subtopic}" within the broader context of "${parentContext}". Provide detailed, specific information that builds upon the parent topic.`;
+        } else {
+          contextualDescription = `This content is for the main subtopic "${subtopic}". Provide comprehensive foundational information.`;
+        }
+
+        // Add hierarchy metadata to the request
+        const enhancedSubtopic =
+          level > 1
+            ? `Level ${level}: ${contextualSubtopic}`
+            : contextualSubtopic;
+
+        aiResponse = await GetNotesGemini(topic, syllabus, enhancedSubtopic);
+        console.log(
+          `✅ Gemini AI Response generated for level ${level}:`,
+          aiResponse
+        );
+
+        // Add metadata to response
+        aiResponse = {
+          ...aiResponse,
+          metadata: {
+            level: level,
+            hierarchyPath: hierarchyPath,
+            parentContext: parentContext,
+            originalSubtopic: subtopic,
+            enhancedSubtopic: enhancedSubtopic,
+            generatedAt: new Date().toISOString(),
+            contentDepth:
+              level === 1 ? "broad" : level === 2 ? "detailed" : "deep",
+            apiVersion: "2.0",
+          },
+        };
       } else {
-        // Use Ollama (default)
+        // Use Ollama (default) - basic implementation for now
         const {GetNotesOllama} = await import("./get_notes_ollama.mjs");
         aiResponse = await GetNotesOllama(topic, syllabus);
         if (!aiResponse.success) {
@@ -273,7 +581,16 @@ app.listen(port, "0.0.0.0", () => {
   console.log(
     `Submit endpoint (flexible): http://localhost:${port}/api/submit`
   );
-  console.log(`Submit endpoint (flexible): http://localhost:${port}/api/notes`);
+  console.log(`Notes endpoint: http://localhost:${port}/api/notes`);
+  console.log(
+    `Expand subtopics: http://localhost:${port}/api/expand-subtopics`
+  );
+  console.log(
+    `Expand subtopic node: http://localhost:${port}/api/expand-subtopic-node`
+  );
+  console.log(
+    `Subtopic tree management: http://localhost:${port}/api/subtopic-tree`
+  );
   console.log(
     `Submit endpoint (Ollama): http://localhost:${port}/api/submit-ollama`
   );
