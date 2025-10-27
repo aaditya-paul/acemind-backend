@@ -7,7 +7,7 @@ const port = process.env.PORT || 8000;
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({extended: true}));
+app.use(express.urlencoded({ extended: true }));
 
 app.post("/api/expand-subtopics", async (req, res) => {
   const {
@@ -35,7 +35,7 @@ app.post("/api/expand-subtopics", async (req, res) => {
     console.log(`👤 Parent Context: ${parentContext || "None"}`);
 
     // Import the function dynamically
-    const {GetExpandedSubtopics} = await import("./getExpandedSubtopics.mjs");
+    const { GetExpandedSubtopics } = await import("./getExpandedSubtopics.mjs");
 
     // Create enhanced context for AI to understand hierarchy
     let enhancedSubtopic = subtopic;
@@ -130,7 +130,7 @@ app.post("/api/expand-subtopic-node", async (req, res) => {
     }
 
     // Import the function dynamically
-    const {GetExpandedSubtopics} = await import("./getExpandedSubtopics.mjs");
+    const { GetExpandedSubtopics } = await import("./getExpandedSubtopics.mjs");
     const expandedSubtopics = await GetExpandedSubtopics(
       subtopicTitle,
       syllabus,
@@ -202,7 +202,7 @@ app.post("/api/subtopic-tree", async (req, res) => {
     }
 
     // Import the function dynamically
-    const {GetExpandedSubtopics} = await import("./getExpandedSubtopics.mjs");
+    const { GetExpandedSubtopics } = await import("./getExpandedSubtopics.mjs");
 
     // Build context for better AI understanding of the subtopic hierarchy
     const contextualSubtopic =
@@ -310,7 +310,7 @@ app.post("/api/notes", async (req, res) => {
       let aiResponse;
       if (aiProvider.toLowerCase() === "gemini") {
         // Use Gemini AI with hierarchical context
-        const {GetNotesGemini} = await import("./get_notes_gemini.mjs");
+        const { GetNotesGemini } = await import("./get_notes_gemini.mjs");
 
         // Create context-aware subtopic for better AI understanding
         let contextualSubtopic = subtopic || "General Overview";
@@ -352,7 +352,7 @@ app.post("/api/notes", async (req, res) => {
         };
       } else {
         // Use Ollama (default) - basic implementation for now
-        const {GetNotesOllama} = await import("./get_notes_ollama.mjs");
+        const { GetNotesOllama } = await import("./get_notes_ollama.mjs");
         aiResponse = await GetNotesOllama(topic, syllabus);
         if (!aiResponse.success) {
           console.log("failed ");
@@ -397,7 +397,7 @@ app.post("/api/notes", async (req, res) => {
 // API endpoint to receive topic and syllabus with AI provider selection
 app.post("/api/submit", async (req, res) => {
   try {
-    const {topic, syllabus, aiProvider = "gemini"} = req.body;
+    const { topic, syllabus, aiProvider = "gemini" } = req.body;
 
     // Validate required fields
     if (!topic || !syllabus) {
@@ -426,15 +426,15 @@ app.post("/api/submit", async (req, res) => {
       let SyllabusContext;
       if (aiProvider.toLowerCase() === "gemini") {
         // Use Gemini AI
-        const {GetAiOutputGemini} = await import("./gemini_ai.mjs");
-        const {GetSyllabusContext} = await import("./getSyllabusContext.mjs");
+        const { GetAiOutputGemini } = await import("./gemini_ai.mjs");
+        const { GetSyllabusContext } = await import("./getSyllabusContext.mjs");
         aiResponse = await GetAiOutputGemini(topic, syllabus);
         SyllabusContext = await GetSyllabusContext(topic, syllabus);
 
         console.log("Gemini AI Response:", aiResponse);
       } else {
         // Use Ollama (default)
-        const {GetAiOutput} = await import("./get_ai_output.mjs");
+        const { GetAiOutput } = await import("./get_ai_output.mjs");
         aiResponse = await GetAiOutput(topic, syllabus);
         console.log("Ollama AI Response:", aiResponse);
       }
@@ -477,7 +477,7 @@ app.post("/api/submit", async (req, res) => {
 // Original endpoint for backward compatibility
 app.post("/api/submit-ollama", async (req, res) => {
   try {
-    const {topic, syllabus} = req.body;
+    const { topic, syllabus } = req.body;
 
     if (!topic || !syllabus) {
       return res.status(400).json({
@@ -487,7 +487,7 @@ app.post("/api/submit-ollama", async (req, res) => {
     }
 
     try {
-      const {GetAiOutput} = await import("./get_ai_output.mjs");
+      const { GetAiOutput } = await import("./get_ai_output.mjs");
       const aiResponse = await GetAiOutput(topic, syllabus);
 
       res.json({
@@ -522,7 +522,7 @@ app.post("/api/submit-ollama", async (req, res) => {
 // Gemini-specific endpoint
 app.post("/api/submit-gemini", async (req, res) => {
   try {
-    const {topic, syllabus} = req.body;
+    const { topic, syllabus } = req.body;
 
     if (!topic || !syllabus) {
       return res.status(400).json({
@@ -532,7 +532,7 @@ app.post("/api/submit-gemini", async (req, res) => {
     }
 
     try {
-      const {GetAiOutputGemini} = await import("./gemini_ai.mjs");
+      const { GetAiOutputGemini } = await import("./gemini_ai.mjs");
       const aiResponse = await GetAiOutputGemini(topic, syllabus);
 
       res.json({
@@ -565,6 +565,95 @@ app.post("/api/submit-gemini", async (req, res) => {
   }
 });
 
+// Doubt Chat endpoint - AI tutor for student questions
+app.post("/api/doubt-chat", async (req, res) => {
+  const {
+    question,
+    context = null,
+    selectedText = null,
+    conversationHistory = [],
+  } = req.body;
+
+  try {
+    // Validate required fields - only question is required
+    if (!question) {
+      return res.status(400).json({
+        success: false,
+        message: "Question is required",
+      });
+    }
+
+    console.log("💬 Doubt Chat Request:");
+    console.log("❓ Question:", question);
+    console.log("📚 Has Context:", context ? "Yes" : "No (General mode)");
+    console.log("📌 Selected Text:", selectedText ? "Yes" : "No");
+    console.log("💭 History Length:", conversationHistory.length);
+
+    // Import the AI function
+    const { ProcessDoubtWithGemini } = await import("./doubt_chat_ai.mjs");
+
+    // Provide default context if none provided
+    const effectiveContext =
+      context ||
+      "# General Learning Context\nThe student is currently learning and may have general questions about their course material.\n";
+
+    // Get AI response
+    const answer = await ProcessDoubtWithGemini(
+      question,
+      effectiveContext,
+      selectedText,
+      conversationHistory
+    );
+
+    console.log("✅ Doubt answered successfully");
+
+    // Send success response
+    res.json({
+      success: true,
+      message: "Doubt processed successfully",
+      answer: answer,
+      hasContext: !!context,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("❌ Error in /api/doubt-chat:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to process doubt",
+      error: error.message,
+    });
+  }
+});
+
+// Suggested Questions endpoint - Generate helpful questions
+app.post("/api/suggested-questions", async (req, res) => {
+  const { topic, context } = req.body;
+
+  try {
+    if (!topic || !context) {
+      return res.status(400).json({
+        success: false,
+        message: "Both topic and context are required",
+      });
+    }
+
+    const { GenerateSuggestedQuestions } = await import("./doubt_chat_ai.mjs");
+    const questions = await GenerateSuggestedQuestions(topic, context);
+
+    res.json({
+      success: true,
+      questions: questions,
+    });
+  } catch (error) {
+    console.error("❌ Error generating suggested questions:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to generate questions",
+      error: error.message,
+    });
+  }
+});
+
 // Health check endpoint
 app.get("/api/health", (req, res) => {
   res.json({
@@ -582,6 +671,10 @@ app.listen(port, "0.0.0.0", () => {
     `Submit endpoint (flexible): http://localhost:${port}/api/submit`
   );
   console.log(`Notes endpoint: http://localhost:${port}/api/notes`);
+  console.log(`Doubt Chat endpoint: http://localhost:${port}/api/doubt-chat`);
+  console.log(
+    `Suggested Questions endpoint: http://localhost:${port}/api/suggested-questions`
+  );
   console.log(
     `Expand subtopics: http://localhost:${port}/api/expand-subtopics`
   );
