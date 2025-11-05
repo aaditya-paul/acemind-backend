@@ -654,6 +654,99 @@ app.post("/api/suggested-questions", async (req, res) => {
   }
 });
 
+// Generate Quiz Questions endpoint
+app.post("/api/generate-quiz", async (req, res) => {
+  const { topic, difficulty, questionCount, courseContext } = req.body;
+
+  try {
+    // Validate required fields
+    if (!topic || typeof topic !== "string" || topic.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid topic is required (non-empty string)",
+      });
+    }
+
+    if (
+      !difficulty ||
+      !["beginner", "intermediate", "advanced", "expert"].includes(difficulty)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Valid difficulty required (beginner, intermediate, advanced, expert)",
+      });
+    }
+
+    if (!questionCount || questionCount < 1 || questionCount > 50) {
+      return res.status(400).json({
+        success: false,
+        message: "questionCount must be between 1 and 50",
+      });
+    }
+
+    console.log(
+      `🎯 Generating ${questionCount} ${difficulty} quiz questions for: ${topic.substring(
+        0,
+        100
+      )}...`
+    );
+
+    const { GenerateQuizQuestions } = await import("./generate_quiz_ai.mjs");
+
+    const questions = await GenerateQuizQuestions(
+      topic.trim(),
+      difficulty,
+      questionCount,
+      courseContext || ""
+    );
+
+    if (!questions || questions.length === 0) {
+      throw new Error("AI generated no questions");
+    }
+
+    console.log(`✅ Successfully generated ${questions.length} quiz questions`);
+
+    res.json({
+      success: true,
+      questions: questions,
+      metadata: {
+        topic: topic.substring(0, 100),
+        difficulty,
+        questionCount: questions.length,
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error generating quiz questions:", error);
+
+    // More specific error messages
+    let statusCode = 500;
+    let errorMessage = "Failed to generate quiz questions";
+
+    if (error.message?.includes("API key")) {
+      errorMessage = "Gemini API key configuration error";
+    } else if (
+      error.message?.includes("quota") ||
+      error.message?.includes("rate limit")
+    ) {
+      errorMessage = "API quota exceeded, please try again later";
+      statusCode = 429;
+    } else if (
+      error.message?.includes("parse") ||
+      error.message?.includes("JSON")
+    ) {
+      errorMessage = "Failed to parse AI response";
+    }
+
+    return res.status(statusCode).json({
+      success: false,
+      message: errorMessage,
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+});
+
 // Health check endpoint
 app.get("/api/health", (req, res) => {
   res.json({
@@ -675,6 +768,7 @@ app.listen(port, "0.0.0.0", () => {
   console.log(
     `Suggested Questions endpoint: http://localhost:${port}/api/suggested-questions`
   );
+  console.log(`Generate Quiz: http://localhost:${port}/api/generate-quiz`);
   console.log(
     `Expand subtopics: http://localhost:${port}/api/expand-subtopics`
   );
