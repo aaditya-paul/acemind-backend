@@ -62,15 +62,23 @@ Return ONLY a valid JSON array with this EXACT structure (no additional text):
     "question": "Question text here",
     "options": ["Option A", "Option B", "Option C", "Option D"],
     "correctAnswer": 0,
+    "correctAnswerText": "Option A",
     "explanation": "Brief explanation of why this is correct and why others are wrong"
   }
 ]
 
-CRITICAL REQUIREMENTS:
+CRITICAL REQUIREMENTS FOR correctAnswer:
 - correctAnswer MUST be the INDEX (0-3) of the correct option in the options array
+- DOUBLE-CHECK: If "Option B" is correct, correctAnswer should be 1 (not 0 or 2)
+- TRIPLE-CHECK: Count carefully - array indices start at 0
+- Example: ["Wrong", "Correct", "Wrong", "Wrong"] → correctAnswer = 1
+- ALSO provide correctAnswerText field with the EXACT text of the correct answer for verification
 - Return ONLY the JSON array, absolutely no other text before or after
 - Ensure the JSON is properly formatted and valid
-- Generate EXACTLY ${questionCount} questions`;
+- Generate EXACTLY ${questionCount} questions
+
+VERIFICATION STEP:
+Before returning, verify that options[correctAnswer] === correctAnswerText for each question.`;
 
     console.log("🤖 Sending request to Gemini AI for quiz generation...");
 
@@ -131,6 +139,52 @@ CRITICAL REQUIREMENTS:
       // Ensure all options are strings
       const sanitizedOptions = q.options.map((opt) => String(opt).trim());
 
+      // CRITICAL VALIDATION: Verify correctAnswer index matches correctAnswerText
+      if (q.correctAnswerText) {
+        const actualCorrectText = sanitizedOptions[q.correctAnswer];
+        const providedCorrectText = String(q.correctAnswerText).trim();
+
+        // Check if they match (case-insensitive, whitespace-normalized)
+        const normalizeText = (text) =>
+          text.toLowerCase().replace(/\s+/g, " ").trim();
+
+        if (
+          normalizeText(actualCorrectText) !==
+          normalizeText(providedCorrectText)
+        ) {
+          console.warn(`⚠️ Question ${index + 1}: AI hallucination detected!`);
+          console.warn(`   Question: ${q.question}`);
+          console.warn(
+            `   AI claimed correct answer is: "${providedCorrectText}"`
+          );
+          console.warn(
+            `   But correctAnswer index ${q.correctAnswer} points to: "${actualCorrectText}"`
+          );
+          console.warn(`   Options: ${JSON.stringify(sanitizedOptions)}`);
+
+          // Try to find the correct index
+          const correctIndex = sanitizedOptions.findIndex(
+            (opt) => normalizeText(opt) === normalizeText(providedCorrectText)
+          );
+
+          if (correctIndex !== -1) {
+            console.warn(
+              `   ✅ Fixed: Correcting index from ${q.correctAnswer} to ${correctIndex}`
+            );
+            q.correctAnswer = correctIndex;
+          } else {
+            console.error(
+              `   ❌ Cannot auto-fix: correctAnswerText not found in options`
+            );
+            throw new Error(
+              `Question ${
+                index + 1
+              }: AI hallucination - correctAnswerText "${providedCorrectText}" not found in options`
+            );
+          }
+        }
+      }
+
       return {
         question: String(q.question).trim(),
         options: sanitizedOptions,
@@ -143,6 +197,24 @@ CRITICAL REQUIREMENTS:
     console.log(
       `✅ Successfully validated ${validatedQuestions.length} questions`
     );
+
+    // Development: Log all questions with correct answers
+    console.log("\n📋 QUIZ QUESTIONS (DEVELOPMENT MODE):");
+    console.log("=".repeat(80));
+    validatedQuestions.forEach((q, idx) => {
+      console.log(`\n❓ Question ${idx + 1}: ${q.question}`);
+      q.options.forEach((opt, optIdx) => {
+        const marker = optIdx === q.correctAnswer ? "✅" : "  ";
+        console.log(`   ${marker} ${String.fromCharCode(65 + optIdx)}. ${opt}`);
+      });
+      console.log(
+        `   💡 Correct Answer: ${String.fromCharCode(
+          65 + q.correctAnswer
+        )} (Index: ${q.correctAnswer})`
+      );
+      console.log(`   📝 Explanation: ${q.explanation}`);
+    });
+    console.log("=".repeat(80) + "\n");
 
     return validatedQuestions;
   } catch (error) {
