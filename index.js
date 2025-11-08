@@ -1,8 +1,19 @@
 const express = require("express");
 const cors = require("cors");
+const {
+  sanitizeQuestionsForClient,
+  generateQuizHash,
+  validateQuizSubmission,
+  calculateScore,
+  generateSessionId,
+} = require("./quizSecurity");
+
 // Use dynamic import for ES modules
 const app = express();
 const port = process.env.PORT || 8000;
+
+// In-memory storage for quiz sessions (use Redis in production)
+const quizSessions = new Map();
 
 // Middleware
 app.use(cors());
@@ -707,9 +718,46 @@ app.post("/api/generate-quiz", async (req, res) => {
 
     console.log(`✅ Successfully generated ${questions.length} quiz questions`);
 
+    // Generate secure session
+    const sessionId = generateSessionId(
+      req.body.userId || "anonymous",
+      `${topic}-${Date.now()}`
+    );
+    const startTime = Date.now();
+    const timeLimit = req.body.timeLimit || 600; // Default 10 minutes in seconds
+    const sessionHash = generateQuizHash(sessionId, startTime, timeLimit);
+
+    // Store full questions with answers server-side
+    quizSessions.set(sessionId, {
+      questions, // Full questions with correct answers
+      startTime,
+      timeLimit,
+      sessionHash,
+      topic: topic.substring(0, 100),
+      difficulty,
+      expiresAt: startTime + (timeLimit + 300) * 1000, // Expires 5 min after time limit
+    });
+
+    // Clean up expired sessions every 5 minutes
+    setInterval(() => {
+      const now = Date.now();
+      for (const [sid, session] of quizSessions.entries()) {
+        if (session.expiresAt < now) {
+          quizSessions.delete(sid);
+        }
+      }
+    }, 300000);
+
+    // Send sanitized questions (without correct answers) to client
+    const sanitizedQuestions = sanitizeQuestionsForClient(questions);
+
     res.json({
       success: true,
-      questions: questions,
+      sessionId,
+      sessionHash,
+      startTime,
+      timeLimit,
+      questions: sanitizedQuestions,
       metadata: {
         topic: topic.substring(0, 100),
         difficulty,
@@ -742,6 +790,96 @@ app.post("/api/generate-quiz", async (req, res) => {
     return res.status(statusCode).json({
       success: false,
       message: errorMessage,
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+});
+
+// Secure quiz submission endpoint
+app.post("/api/submit-quiz", async (req, res) => {
+  try {
+    const { sessionId, sessionHash, userAnswers, submitTime } = req.body;
+
+    // Validate required fields
+    if (!sessionId || !sessionHash || !userAnswers || !submitTime) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields",
+      });
+    }
+
+    // Retrieve quiz session
+    const session = quizSessions.get(sessionId);
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: "Quiz session not found or expired",
+      });
+    }
+
+    // Extract correct answers from stored questions
+    const correctAnswers = session.questions.map((q) => q.correctAnswer);
+
+    // Validate submission
+    const validation = validateQuizSubmission({
+      quizId: sessionId,
+      startTime: session.startTime,
+      submitTime,
+      timeLimit: session.timeLimit,
+      sessionHash,
+      userAnswers,
+      correctAnswers,
+    });
+
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid quiz submission",
+        errors: validation.errors,
+      });
+    }
+
+    // Calculate score server-side
+    const scoreDetails = calculateScore(userAnswers, correctAnswers);
+
+    // Build detailed results with questions and explanations
+    const detailedMistakes = scoreDetails.mistakes.map((mistake) => {
+      const question = session.questions[mistake.questionIndex];
+      return {
+        questionIndex: mistake.questionIndex,
+        question: question.question,
+        userAnswer:
+          mistake.userAnswer !== null
+            ? question.options[mistake.userAnswer]
+            : "Not answered",
+        correctAnswer: question.options[mistake.correctAnswer],
+        explanation: question.explanation || "",
+        options: question.options,
+      };
+    });
+
+    const results = {
+      ...scoreDetails,
+      timeTaken: validation.actualTimeTaken,
+      timeLimit: session.timeLimit,
+      topic: session.topic,
+      difficulty: session.difficulty,
+      detailedMistakes,
+      submittedAt: new Date(submitTime).toISOString(),
+    };
+
+    // Clean up session after successful submission
+    quizSessions.delete(sessionId);
+
+    res.json({
+      success: true,
+      results,
+    });
+  } catch (error) {
+    console.error("❌ Error submitting quiz:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to submit quiz",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
