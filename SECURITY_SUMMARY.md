@@ -3,6 +3,7 @@
 ## 🔒 What Was Secured
 
 ### Before (Insecure)
+
 - ❌ Correct answers sent to client in API response
 - ❌ Timer runs only on client-side (modifiable via DevTools)
 - ❌ Scoring calculated client-side (manipulable)
@@ -10,6 +11,7 @@
 - ❌ Users could inspect network tab to see answers
 
 ### After (Secure)
+
 - ✅ Correct answers **NEVER** sent to client
 - ✅ Timer validated server-side with start/submit timestamps
 - ✅ Scoring calculated exclusively on server
@@ -19,7 +21,9 @@
 ## 📁 Files Created/Modified
 
 ### New Files:
+
 1. **`quizSecurity.js`** - Core security utilities
+
    - Session hash generation/validation
    - Answer sanitization
    - Server-side scoring
@@ -28,13 +32,16 @@
 2. **`QUIZ_SECURITY.md`** - Complete security documentation
 
 ### Modified Files:
+
 1. **`index.js`** (Backend)
+
    - Import security functions
    - Added session storage (Map)
    - Modified `/api/generate-quiz` to create secure sessions
    - Added `/api/submit-quiz` endpoint for validation
 
 2. **`QuizInterface.jsx`** (Frontend)
+
    - Store sessionId, sessionHash, startTime in refs
    - Modified `handleSubmit` to call server API
    - Use server-validated results instead of client calculation
@@ -47,26 +54,32 @@
 ## 🚀 How to Use
 
 ### 1. Set Environment Variable
+
 Add to `acemind-backend/.env`:
+
 ```bash
 QUIZ_SECRET_KEY=your-super-secret-random-string-min-32-characters-long
 ```
 
 ### 2. Install Dependencies (if needed)
+
 ```bash
 cd acemind-backend
 npm install
 ```
 
 ### 3. Restart Backend
+
 ```bash
 npm start
 ```
 
 ### 4. Test the Security
+
 Try these in browser DevTools (all should fail):
 
 **Attempt 1: Find answers in Network tab**
+
 ```
 1. Open DevTools → Network
 2. Start a quiz
@@ -75,6 +88,7 @@ Result: No "correctAnswer" field in questions ✅
 ```
 
 **Attempt 2: Modify timer**
+
 ```javascript
 // In Console:
 timeLeft = 999999;
@@ -83,6 +97,7 @@ Result: Server rejects - time limit exceeded ✅
 ```
 
 **Attempt 3: Tamper with session**
+
 ```javascript
 // In Console:
 sessionHash = "fake-hash-123";
@@ -93,6 +108,7 @@ Result: Server rejects - invalid session ✅
 ## 🔑 Key Security Features
 
 ### 1. Session-Based Architecture
+
 ```
 Client                          Server
   |                               |
@@ -115,14 +131,17 @@ Client                          Server
 ```
 
 ### 2. Hash-Based Validation
+
 ```javascript
-hash = SHA256(sessionId + startTime + timeLimit + SECRET_KEY)
+hash = SHA256(sessionId + startTime + timeLimit + SECRET_KEY);
 ```
+
 - Cannot be guessed without SECRET_KEY
 - Ties session to specific parameters
 - Prevents parameter tampering
 
 ### 3. Time Enforcement
+
 ```javascript
 actualTime = (submitTime - startTime) / 1000
 maxAllowed = timeLimit + 5 // 5s grace period
@@ -131,6 +150,7 @@ if (actualTime > maxAllowed) → REJECTED
 ```
 
 ### 4. One-Time Sessions
+
 - Session deleted after submission
 - Cannot resubmit same quiz
 - Prevents replay attacks
@@ -144,14 +164,14 @@ if (actualTime > maxAllowed) → REJECTED
 
 ## 🎯 What's Protected
 
-| Feature | Can Be Manipulated? | Why Not? |
-|---------|-------------------|----------|
-| Correct Answers | ❌ NO | Never sent to client |
-| Timer | ❌ NO | Validated server-side |
-| Score | ❌ NO | Calculated server-side |
-| Session | ❌ NO | Hash prevents tampering |
-| Time Limit | ❌ NO | Enforced with timestamps |
-| Re-submission | ❌ NO | Session deleted after use |
+| Feature         | Can Be Manipulated? | Why Not?                  |
+| --------------- | ------------------- | ------------------------- |
+| Correct Answers | ❌ NO               | Never sent to client      |
+| Timer           | ❌ NO               | Validated server-side     |
+| Score           | ❌ NO               | Calculated server-side    |
+| Session         | ❌ NO               | Hash prevents tampering   |
+| Time Limit      | ❌ NO               | Enforced with timestamps  |
+| Re-submission   | ❌ NO               | Session deleted after use |
 
 ## 🔄 Migration Checklist
 
@@ -168,10 +188,12 @@ if (actualTime > maxAllowed) → REJECTED
 ## 🚨 Important Notes
 
 1. **SECRET_KEY**: MUST be changed in production!
+
    - Current: "your-secret-key-change-this-in-production"
    - Recommended: 64+ character random string
 
 2. **Session Storage**: Currently in-memory
+
    - Fine for development/single server
    - Use Redis for production with multiple servers
 
@@ -182,6 +204,7 @@ if (actualTime > maxAllowed) → REJECTED
 ## 🎉 Result
 
 Your quiz system is now secure against:
+
 - ✅ Answer inspection via DevTools
 - ✅ Timer manipulation
 - ✅ Score tampering

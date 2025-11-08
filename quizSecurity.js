@@ -5,7 +5,8 @@ import crypto from "crypto";
  * Prevents manipulation of answers and timing through DevTools
  */
 
-const SECRET_KEY = process.env.QUIZ_SECRET_KEY || "your-secret-key-change-this-in-production";
+const SECRET_KEY =
+  process.env.QUIZ_SECRET_KEY || "your-secret-key-change-this-in-production";
 
 /**
  * Generate a secure hash for quiz session
@@ -41,7 +42,10 @@ export function createAnswerKeyHash(questions) {
   const answerKey = {};
   questions.forEach((q, index) => {
     const answerData = `${index}-${q.correctAnswer}-${SECRET_KEY}`;
-    answerKey[index] = crypto.createHash("sha256").update(answerData).digest("hex");
+    answerKey[index] = crypto
+      .createHash("sha256")
+      .update(answerData)
+      .digest("hex");
   });
   return answerKey;
 }
@@ -128,7 +132,7 @@ export function calculateScore(userAnswers, correctAnswers) {
 
   correctAnswers.forEach((correctAnswer, index) => {
     const userAnswer = userAnswers[index];
-    
+
     if (userAnswer === correctAnswer) {
       correctCount++;
     } else {
