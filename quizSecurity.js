@@ -5,8 +5,7 @@ import crypto from "crypto";
  * Prevents manipulation of answers and timing through DevTools
  */
 
-const SECRET_KEY =
-  process.env.QUIZ_SECRET_KEY || "your-secret-key-change-this-in-production";
+const SECRET_KEY = process.env.QUIZ_SECRET_KEY;
 
 /**
  * Generate a secure hash for quiz session
