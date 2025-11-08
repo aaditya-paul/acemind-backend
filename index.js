@@ -1,5 +1,7 @@
 const express = require("express");
 const cors = require("cors");
+const fs = require("fs").promises;
+const path = require("path");
 const {
   sanitizeQuestionsForClient,
   generateQuizHash,
@@ -12,8 +14,61 @@ const {
 const app = express();
 const port = process.env.PORT || 8000;
 
-// In-memory storage for quiz sessions (use Redis in production)
+// File-based storage for quiz sessions (persists across restarts)
+const SESSIONS_FILE = path.join(__dirname, "quiz-sessions.json");
 const quizSessions = new Map();
+
+// Load sessions from file on startup
+async function loadSessions() {
+  try {
+    const data = await fs.readFile(SESSIONS_FILE, "utf8");
+    const sessions = JSON.parse(data);
+
+    // Filter out expired sessions and load valid ones
+    const now = Date.now();
+    let loadedCount = 0;
+
+    for (const [sessionId, session] of Object.entries(sessions)) {
+      if (session.expiresAt > now) {
+        quizSessions.set(sessionId, session);
+        loadedCount++;
+      }
+    }
+
+    console.log(`📂 Loaded ${loadedCount} active quiz sessions from disk`);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      console.log("📂 No existing sessions file found, starting fresh");
+    } else {
+      console.error("⚠️ Error loading sessions:", error.message);
+    }
+  }
+}
+
+// Save sessions to file
+async function saveSessions() {
+  try {
+    const sessionsObj = Object.fromEntries(quizSessions);
+    await fs.writeFile(
+      SESSIONS_FILE,
+      JSON.stringify(sessionsObj, null, 2),
+      "utf8"
+    );
+    console.log(`💾 Saved ${quizSessions.size} sessions to disk`);
+  } catch (error) {
+    console.error("⚠️ Error saving sessions:", error.message);
+  }
+}
+
+// Auto-save sessions every 30 seconds
+setInterval(() => {
+  if (quizSessions.size > 0) {
+    saveSessions();
+  }
+}, 30000);
+
+// Load sessions on startup
+loadSessions();
 
 // Middleware
 app.use(cors());
@@ -738,15 +793,22 @@ app.post("/api/generate-quiz", async (req, res) => {
       expiresAt: startTime + (timeLimit + 300) * 1000, // Expires 5 min after time limit
     });
 
-    // Clean up expired sessions every 5 minutes
-    setInterval(() => {
-      const now = Date.now();
-      for (const [sid, session] of quizSessions.entries()) {
-        if (session.expiresAt < now) {
-          quizSessions.delete(sid);
-        }
+    // Save to disk immediately
+    saveSessions();
+
+    // Clean up expired sessions periodically
+    const now = Date.now();
+    let cleanedCount = 0;
+    for (const [sid, session] of quizSessions.entries()) {
+      if (session.expiresAt < now) {
+        quizSessions.delete(sid);
+        cleanedCount++;
       }
-    }, 300000);
+    }
+    if (cleanedCount > 0) {
+      console.log(`🧹 Cleaned up ${cleanedCount} expired sessions`);
+      saveSessions();
+    }
 
     // Send sanitized questions (without correct answers) to client
     const sanitizedQuestions = sanitizeQuestionsForClient(questions);
@@ -870,6 +932,7 @@ app.post("/api/submit-quiz", async (req, res) => {
 
     // Clean up session after successful submission
     quizSessions.delete(sessionId);
+    saveSessions();
 
     res.json({
       success: true,

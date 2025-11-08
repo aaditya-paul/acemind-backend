@@ -18,6 +18,9 @@ pids/
 .env
 .env.*
 
+# Quiz session data (contains answers)
+quiz-sessions.json
+
 # Build output
 dist/
 build/
