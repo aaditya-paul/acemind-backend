@@ -1,7 +1,7 @@
 // import {GoogleGenerativeAI} from "@google/generative-ai";
-import {GoogleGenAI} from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
-import {z} from "zod"; // Import Zod
+import { z } from "zod"; // Import Zod
 
 dotenv.config();
 
@@ -10,7 +10,7 @@ dotenv.config();
 const NotesSchema = {
   type: "OBJECT",
   properties: {
-    title: {type: "STRING"},
+    title: { type: "STRING" },
     content: {
       type: "ARRAY",
       items: {
@@ -32,29 +32,29 @@ const NotesSchema = {
               "practiceQuestions",
             ],
           },
-          value: {type: "STRING", nullable: true}, // For text and code content
+          value: { type: "STRING", nullable: true }, // For text and code content
           items: {
             type: "ARRAY",
-            items: {type: "STRING"},
+            items: { type: "STRING" },
             nullable: true,
           }, // For bullet points and practice questions
           headers: {
             type: "ARRAY",
-            items: {type: "STRING"},
+            items: { type: "STRING" },
             nullable: true,
           }, // For table headers
           rows: {
             type: "ARRAY",
             items: {
               type: "ARRAY",
-              items: {type: "STRING"},
+              items: { type: "STRING" },
             },
             nullable: true,
           }, // For table rows
-          language: {type: "STRING", nullable: true}, // For code
-          videoTitle: {type: "STRING", nullable: true}, // For youtube
-          url: {type: "STRING", nullable: true}, // For youtube and image
-          description: {type: "STRING", nullable: true}, // For image
+          language: { type: "STRING", nullable: true }, // For code
+          videoTitle: { type: "STRING", nullable: true }, // For youtube
+          url: { type: "STRING", nullable: true }, // For youtube and image
+          description: { type: "STRING", nullable: true }, // For image
         },
         required: ["type"],
       },
@@ -202,8 +202,8 @@ export async function GetNotesGemini(topic, syllabus, subtopic) {
       );
 
       const result = await genAI.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{role: "user", parts: [{text: prompt}]}],
+        model: "gemini-2.0-flash", // Cost optimization: $0.10/$0.40 (3x cheaper, still accurate for educational notes)
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
         config: {
           responseMimeType: "application/json",
           responseSchema: NotesSchema,

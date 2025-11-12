@@ -1,6 +1,6 @@
-import {GoogleGenAI} from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
-import {z} from "zod"; // Import Zod for validation
+import { z } from "zod"; // Import Zod for validation
 
 dotenv.config();
 
@@ -164,11 +164,11 @@ export async function GetExpandedSubtopics(
       );
 
       const response = await googleGenAI.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-1.5-flash", // Cost optimization: $0.075/$0.30 (4x cheaper, good for subtopic expansion)
         contents: [
           {
             role: "user",
-            parts: [{text: prompt}],
+            parts: [{ text: prompt }],
           },
         ],
         config: {

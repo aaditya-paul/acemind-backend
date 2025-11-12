@@ -1,5 +1,5 @@
-import {GoogleGenAI} from "@google/genai";
-import {SyllabusSchema} from "./ai_outpt_schema.mjs";
+import { GoogleGenAI } from "@google/genai";
+import { SyllabusSchema } from "./ai_outpt_schema.mjs";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -55,8 +55,8 @@ Syllabus: ${syllabus}
   try {
     console.log("⚙️ Asking Gemini...");
     const response = await genAI.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [{role: "user", text: prompt}],
+      model: "gemini-2.0-flash", // Cost optimization: $0.10/$0.40 (3x cheaper, good for syllabus parsing)
+      contents: [{ role: "user", text: prompt }],
     });
 
     const text = response.text;

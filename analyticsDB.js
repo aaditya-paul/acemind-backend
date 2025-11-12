@@ -107,7 +107,7 @@ function estimateTokenCount(text) {
  * @returns {Object} Cost breakdown in USD and INR
  */
 function calculateCost(model, inputTokens, outputTokens) {
-  const pricing = PRICING[model] || PRICING["gemini-2.5-flash"]; // Default to flash
+  const pricing = PRICING[model] || PRICING["gemini-1.5-flash"]; // Default to most cost-effective
 
   // Calculate cost per million tokens
   const inputCostUSD = (inputTokens / 1_000_000) * pricing.input;

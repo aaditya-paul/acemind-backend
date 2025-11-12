@@ -7,15 +7,20 @@ const { trackApiCall } = require("./analyticsDB");
  */
 function getModelForEndpoint(endpoint) {
   const modelMap = {
-    "/api/submit": "gemini-2.5-flash",
-    "/api/expand-subtopics": "gemini-2.5-flash",
-    "/api/notes": "gemini-2.5-flash",
-    "/api/doubt-chat": "gemini-2.5-flash", // PAID - uses 2.5-flash for quality
-    "/api/generate-quiz": "gemini-2.5-flash", // PAID - uses 2.5-flash for quality
-    "/api/suggested-questions": "gemini-2.5-flash", // PAID - uses 2.5-flash for quality
+    // Priority 1: Maximum Accuracy (Factual Correctness Critical)
+    "/api/generate-quiz": "gemini-2.5-flash", // $0.30/$2.50 - Quiz accuracy is TOP priority
+
+    // Priority 2: High Accuracy (Educational Content)
+    "/api/notes": "gemini-2.0-flash", // $0.10/$0.40 - 3x cheaper, still accurate for notes
+    "/api/submit": "gemini-2.0-flash", // $0.10/$0.40 - Syllabus context generation
+
+    // Priority 3: Good Accuracy (Interactive Features)
+    "/api/expand-subtopics": "gemini-1.5-flash", // $0.075/$0.30 - 4x cheaper, good for subtopic expansion
+    "/api/doubt-chat": "gemini-1.5-flash", // $0.075/$0.30 - Conversational AI, cost-effective
+    "/api/suggested-questions": "gemini-1.5-flash", // $0.075/$0.30 - Question suggestions don't need max accuracy
   };
 
-  return modelMap[endpoint] || "";
+  return modelMap[endpoint] || "gemini-1.5-flash"; // Default to most cost-effective
 }
 
 /**
