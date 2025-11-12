@@ -2,6 +2,8 @@
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { z } from "zod"; // Import Zod
+import { retryWithBackoff } from "./retryUtils.mjs";
+import { getModelForService } from "./modelConfig.mjs";
 
 dotenv.config();
 
@@ -190,61 +192,45 @@ export async function GetNotesGemini(topic, syllabus, subtopic) {
 
   `;
 
-  const MAX_RETRIES = 3;
-  const INITIAL_DELAY_MS = 1000; // 1 second
+  try {
+    console.log("⚙️ Generating structured notes...");
 
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const model = getModelForService("notes");
+    const result = await retryWithBackoff(
+      async () =>
+        await genAI.models.generateContent({
+          model: model,
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: NotesSchema,
+          },
+        }),
+      "GetNotesGemini"
+    );
+
+    const rawJsonString = result.text;
+    console.log("🧠 Raw Gemini JSON Response:\n", rawJsonString);
+
+    // Sanitize and parse the JSON response
+    const cleanedJsonString = sanitizeJson(rawJsonString);
+    console.log("📦 Cleaned JSON string:\n", cleanedJsonString);
+
+    let rawOutput;
     try {
-      console.log(
-        `⚙️ Generating structured notes (Attempt ${
-          attempt + 1
-        }/${MAX_RETRIES})...`
-      );
-
-      const result = await genAI.models.generateContent({
-        model: "gemini-2.0-flash", // Balanced accuracy for educational notes
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: NotesSchema,
-        },
-      });
-
-      const rawJsonString = result.text;
-      console.log("🧠 Raw Gemini JSON Response:\n", rawJsonString);
-
-      // Sanitize and parse the JSON response
-      const cleanedJsonString = sanitizeJson(rawJsonString);
-      console.log("📦 Cleaned JSON string:\n", cleanedJsonString);
-
-      let rawOutput;
-      try {
-        rawOutput = JSON.parse(cleanedJsonString);
-      } catch (parseError) {
-        throw new Error(`JSON parsing failed: ${parseError.message}`);
-      }
-
-      // Validate output using Zod schema
-      const validatedOutput = adaptAIResponse(rawOutput);
-
-      console.log("✅ Successfully generated and validated structured notes");
-      return validatedOutput;
-    } catch (err) {
-      console.error(
-        `❌ Error generating structured notes (Attempt ${attempt + 1}):`,
-        err.message
-      );
-
-      if (attempt < MAX_RETRIES - 1) {
-        const delay = INITIAL_DELAY_MS * Math.pow(2, attempt);
-        console.log(`⏳ Retrying in ${delay / 1000} seconds...`);
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      } else {
-        throw new Error(
-          `Failed to generate structured notes after ${MAX_RETRIES} attempts: ${err.message}`
-        );
-      }
+      rawOutput = JSON.parse(cleanedJsonString);
+    } catch (parseError) {
+      throw new Error(`JSON parsing failed: ${parseError.message}`);
     }
+
+    // Validate output using Zod schema
+    const validatedOutput = adaptAIResponse(rawOutput);
+
+    console.log("✅ Successfully generated and validated structured notes");
+    return validatedOutput;
+  } catch (err) {
+    console.error(`❌ Error generating structured notes:`, err.message);
+    throw new Error(`Failed to generate structured notes: ${err.message}`);
   }
 }
 

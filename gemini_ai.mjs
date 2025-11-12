@@ -1,6 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 import { SyllabusSchema } from "./ai_outpt_schema.mjs";
 import dotenv from "dotenv";
+import { retryWithBackoff } from "./retryUtils.mjs";
+import { getModelForService } from "./modelConfig.mjs";
 
 dotenv.config();
 
@@ -54,10 +56,15 @@ Syllabus: ${syllabus}
 
   try {
     console.log("⚙️ Asking Gemini...");
-    const response = await genAI.models.generateContent({
-      model: "gemini-2.0-flash", // Balanced accuracy for syllabus parsing
-      contents: [{ role: "user", text: prompt }],
-    });
+    const model = getModelForService("syllabus");
+    const response = await retryWithBackoff(
+      async () =>
+        await genAI.models.generateContent({
+          model: model,
+          contents: [{ role: "user", text: prompt }],
+        }),
+      "GetAiOutputGemini"
+    );
 
     const text = response.text;
     console.log("🧠 Raw Gemini Response:\n", text);

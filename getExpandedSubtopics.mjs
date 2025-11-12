@@ -1,6 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { z } from "zod"; // Import Zod for validation
+import { retryWithBackoff } from "./retryUtils.mjs";
+import { getModelForService } from "./modelConfig.mjs";
 
 dotenv.config();
 
@@ -152,69 +154,54 @@ export async function GetExpandedSubtopics(
     - Maintain consistency with the hierarchical depth
     `;
 
-  const MAX_RETRIES = 3;
-  const INITIAL_DELAY_MS = 1000;
+  try {
+    console.log(`⚙️ Generating level ${level} expanded subtopics...`);
 
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    try {
-      console.log(
-        `⚙️ Generating level ${level} expanded subtopics (Attempt ${
-          attempt + 1
-        }/${MAX_RETRIES})...`
-      );
-
-      const response = await googleGenAI.models.generateContent({
-        model: "gemini-2.0-flash-lite", // Cost-effective for subtopic suggestions
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: prompt }],
+    const model = getModelForService("expand-subtopics");
+    const response = await retryWithBackoff(
+      async () =>
+        await googleGenAI.models.generateContent({
+          model: model,
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: prompt }],
+            },
+          ],
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: ExpandedSubtopicsSchema,
           },
-        ],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: ExpandedSubtopicsSchema,
-        },
-      });
+        }),
+      "GetExpandedSubtopics"
+    );
 
-      const rawJsonString = response.text;
-      console.log("🧠 Raw Gemini JSON Response:\n", rawJsonString);
+    const rawJsonString = response.text;
+    console.log("🧠 Raw Gemini JSON Response:\n", rawJsonString);
 
-      // Sanitize and parse the JSON response
-      const cleanedJsonString = sanitizeJson(rawJsonString);
-      console.log("📦 Cleaned JSON string:\n", cleanedJsonString);
+    // Sanitize and parse the JSON response
+    const cleanedJsonString = sanitizeJson(rawJsonString);
+    console.log("📦 Cleaned JSON string:\n", cleanedJsonString);
 
-      let rawOutput;
-      try {
-        rawOutput = JSON.parse(cleanedJsonString);
-      } catch (parseError) {
-        throw new Error(`JSON parsing failed: ${parseError.message}`);
-      }
-
-      // Validate output using Zod schema
-      const validatedOutput = validateResponse(rawOutput);
-
-      console.log(
-        `✅ Successfully generated level ${level} expanded subtopics`
-      );
-      return validatedOutput.subtopics;
-    } catch (err) {
-      console.error(
-        `❌ Error generating level ${level} expanded subtopics (Attempt ${
-          attempt + 1
-        }):`,
-        err.message
-      );
-
-      if (attempt < MAX_RETRIES - 1) {
-        const delay = INITIAL_DELAY_MS * Math.pow(2, attempt);
-        console.log(`⏳ Retrying in ${delay / 1000} seconds...`);
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      } else {
-        throw new Error(
-          `Failed to generate level ${level} expanded subtopics after ${MAX_RETRIES} attempts: ${err.message}`
-        );
-      }
+    let rawOutput;
+    try {
+      rawOutput = JSON.parse(cleanedJsonString);
+    } catch (parseError) {
+      throw new Error(`JSON parsing failed: ${parseError.message}`);
     }
+
+    // Validate output using Zod schema
+    const validatedOutput = validateResponse(rawOutput);
+
+    console.log(`✅ Successfully generated level ${level} expanded subtopics`);
+    return validatedOutput.subtopics;
+  } catch (err) {
+    console.error(
+      `❌ Error generating level ${level} expanded subtopics:`,
+      err.message
+    );
+    throw new Error(
+      `Failed to generate level ${level} expanded subtopics: ${err.message}`
+    );
   }
 }

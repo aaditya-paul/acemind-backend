@@ -1,5 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import "dotenv/config";
+import { retryWithBackoff } from "./retryUtils.mjs";
+import { getModelForService, getQuizStageConfig } from "./modelConfig.mjs";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
@@ -7,72 +9,6 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
  * Multi-stage generation flag - set to true for more reliable results
  */
 const USE_MULTI_STAGE_GENERATION = true;
-
-/**
- * Rate limiting configuration
- */
-const RATE_LIMIT_CONFIG = {
-  maxRetries: 3,
-  baseDelay: 2000, // 2 seconds
-  maxDelay: 30000, // 30 seconds
-};
-
-/**
- * Sleep utility for rate limiting
- */
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Retry wrapper with exponential backoff for API calls
- * Handles 503 (Service Unavailable), 429 (Too Many Requests), and other transient errors
- */
-async function retryWithBackoff(apiCall, callName = "API call") {
-  let lastError;
-
-  for (let attempt = 0; attempt < RATE_LIMIT_CONFIG.maxRetries; attempt++) {
-    try {
-      return await apiCall();
-    } catch (error) {
-      lastError = error;
-
-      // Check if it's a retryable error (rate limit, service unavailable, etc.)
-      const isRetryableError =
-        error.status === 429 || // Too Many Requests
-        error.status === 503 || // Service Unavailable
-        error.status === 500 || // Internal Server Error (sometimes transient)
-        error.message?.includes("429") ||
-        error.message?.includes("503") ||
-        error.message?.includes("quota") ||
-        error.message?.includes("rate limit") ||
-        error.message?.includes("service unavailable");
-
-      if (isRetryableError && attempt < RATE_LIMIT_CONFIG.maxRetries - 1) {
-        // Exponential backoff: 2s, 4s, 8s, etc.
-        const delay = Math.min(
-          RATE_LIMIT_CONFIG.baseDelay * Math.pow(2, attempt),
-          RATE_LIMIT_CONFIG.maxDelay
-        );
-
-        console.warn(
-          `⚠️  ${
-            error.status === 503 ? "Service unavailable" : "Rate limit"
-          } for ${callName}. Retrying in ${delay / 1000}s... (Attempt ${
-            attempt + 1
-          }/${RATE_LIMIT_CONFIG.maxRetries})`
-        );
-        await sleep(delay);
-        continue;
-      }
-
-      // If it's not a retryable error or we've exhausted retries, throw
-      throw error;
-    }
-  }
-
-  throw lastError;
-}
 
 /**
  * Normalize text for comparison
@@ -90,13 +26,18 @@ async function generateQuestionsOnly(
   questionCount,
   courseContext
 ) {
+  const stageConfig = getQuizStageConfig("questions");
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: stageConfig.model,
     generationConfig: {
-      temperature: 0.7,
+      temperature: stageConfig.temperature,
       // maxOutputTokens: 2048,
     },
   });
+
+  console.log(
+    `🎯 Stage 1 (Questions): Using ${stageConfig.model} (temp: ${stageConfig.temperature})`
+  );
 
   const difficultyGuidelines = {
     beginner:
@@ -141,13 +82,28 @@ Generate EXACTLY ${questionCount} questions.`;
     .trim();
 
   const questions = JSON.parse(text);
-  if (!Array.isArray(questions) || questions.length !== questionCount) {
-    throw new Error(
-      `Expected ${questionCount} questions, got ${questions.length}`
-    );
+
+  if (!Array.isArray(questions)) {
+    throw new Error("Response is not an array");
   }
 
-  return questions.map((q) => String(q).trim());
+  if (questions.length !== questionCount) {
+    console.warn(
+      `⚠️ Expected ${questionCount} questions, got ${questions.length}`
+    );
+
+    // If we got fewer questions, throw error to trigger retry
+    if (questions.length < questionCount) {
+      throw new Error(
+        `Expected ${questionCount} questions, got ${questions.length}`
+      );
+    }
+
+    // If we got more questions, trim to correct count
+    console.warn(`   Trimming to ${questionCount} questions`);
+  }
+
+  return questions.slice(0, questionCount).map((q) => String(q).trim());
 }
 
 /**
@@ -160,13 +116,18 @@ async function generateOptionsForAllQuestions(
   difficulty,
   courseContext
 ) {
+  const stageConfig = getQuizStageConfig("options");
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: stageConfig.model,
     generationConfig: {
-      temperature: 0.3,
+      temperature: stageConfig.temperature,
       // maxOutputTokens: 4096, // Increased for batch processing
     },
   });
+
+  console.log(
+    `🎯 Stage 2 (Options): Using ${stageConfig.model} (temp: ${stageConfig.temperature})`
+  );
 
   const questionsNumbered = questions
     .map((q, i) => `${i + 1}. ${q}`)
@@ -233,13 +194,30 @@ CRITICAL:
 
   const dataArray = JSON.parse(text);
 
-  if (!Array.isArray(dataArray) || dataArray.length !== questions.length) {
-    throw new Error(
-      `Expected ${questions.length} option sets, got ${dataArray.length}`
-    );
+  if (!Array.isArray(dataArray)) {
+    throw new Error("Response is not an array");
   }
 
-  return dataArray.map((data, index) => {
+  if (dataArray.length !== questions.length) {
+    console.warn(
+      `⚠️ Expected ${questions.length} option sets, got ${dataArray.length}`
+    );
+
+    // If we got fewer options, throw error to trigger retry
+    if (dataArray.length < questions.length) {
+      throw new Error(
+        `Expected ${questions.length} option sets, got ${dataArray.length}`
+      );
+    }
+
+    // If we got more options, trim to correct count
+    console.warn(`   Trimming to ${questions.length} option sets`);
+  }
+
+  // Only process up to the number of questions we have
+  const optionsToProcess = dataArray.slice(0, questions.length);
+
+  return optionsToProcess.map((data, index) => {
     if (!Array.isArray(data.options) || data.options.length !== 4) {
       throw new Error(`Question ${index + 1}: Must have exactly 4 options`);
     }
@@ -263,13 +241,18 @@ async function generateExplanationsForAllQuestions(
   questionsWithOptions,
   topic
 ) {
+  const stageConfig = getQuizStageConfig("explanations");
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: stageConfig.model,
     generationConfig: {
-      temperature: 0.3,
+      temperature: stageConfig.temperature,
       // maxOutputTokens: 4096, // Increased for batch processing
     },
   });
+
+  console.log(
+    `🎯 Stage 3 (Explanations): Using ${stageConfig.model} (temp: ${stageConfig.temperature})`
+  );
 
   const questionsFormatted = questionsWithOptions
     .map((q, i) => {
@@ -302,7 +285,7 @@ Requirements for EACH explanation:
 1. Explain WHY the correct answer is correct
 2. Briefly explain why the other options are incorrect
 3. Include relevant concepts or formulas if applicable
-4. Keep it concise but informative (2-4 sentences)
+4. Keep it concise (2-4 sentences)
 
 FACTUAL ACCURACY REQUIREMENT:
 - Each explanation must be strictly correct based on standard undergraduate-level science.
@@ -330,14 +313,95 @@ Generate EXACTLY ${questionsWithOptions.length} explanations.`;
     !Array.isArray(explanations) ||
     explanations.length !== questionsWithOptions.length
   ) {
-    throw new Error(
-      `Expected ${questionsWithOptions.length} explanations, got ${
+    console.warn(
+      `⚠️ Expected ${questionsWithOptions.length} explanations, got ${
         explanations?.length || 0
       }`
     );
+
+    // If we got fewer explanations, throw error to trigger retry
+    if (
+      !Array.isArray(explanations) ||
+      explanations.length < questionsWithOptions.length
+    ) {
+      throw new Error(
+        `Expected ${questionsWithOptions.length} explanations, got ${
+          explanations?.length || 0
+        }`
+      );
+    }
+
+    // If we got more explanations, just trim to the correct count
+    console.warn(`   Trimming to ${questionsWithOptions.length} explanations`);
+    return explanations
+      .slice(0, questionsWithOptions.length)
+      .map((exp) => String(exp).trim());
   }
 
   return explanations.map((exp) => String(exp).trim());
+}
+
+/**
+ * Fallback: Generate a single explanation with structured output
+ * Used when batch generation fails
+ */
+async function generateSingleExplanation(questionWithOptions, topic) {
+  const stageConfig = getQuizStageConfig("explanations");
+
+  const explanationSchema = {
+    type: "object",
+    properties: {
+      explanation: {
+        type: "string",
+        description:
+          "Clear explanation of why the correct answer is right and why others are wrong",
+      },
+    },
+    required: ["explanation"],
+  };
+
+  const model = genAI.getGenerativeModel({
+    model: stageConfig.model,
+    generationConfig: {
+      temperature: stageConfig.temperature,
+      responseMimeType: "application/json",
+      responseSchema: explanationSchema,
+    },
+  });
+
+  const prompt = `Provide a clear, educational explanation for this quiz question.
+
+Topic: "${topic}"
+
+Question: "${questionWithOptions.question}"
+Options: ${JSON.stringify(questionWithOptions.options)}
+Correct Answer: "${questionWithOptions.correctAnswerText}"
+
+VERIFICATION STEPS:
+1. Verify the correct answer follows established principles
+2. Double-check any numerical values or formulas
+3. Ensure reasoning is logically sound
+
+Requirements:
+1. Explain WHY the correct answer is correct
+2. Briefly explain why the other options are incorrect
+3. Include relevant concepts or formulas if applicable
+4. Keep it concise (2-4 sentences)
+5. Must be factually accurate based on standard undergraduate-level science`;
+
+  const result = await retryWithBackoff(
+    async () => await model.generateContent(prompt),
+    "Single Explanation"
+  );
+
+  const text = result.response.text();
+  const data = JSON.parse(text);
+
+  if (!data.explanation) {
+    throw new Error("Structured output did not return explanation");
+  }
+
+  return String(data.explanation).trim();
 }
 
 /**
@@ -391,21 +455,62 @@ async function generateWithMultiStage(
   questionCount,
   courseContext
 ) {
-  // Stage 1: Generate questions (1 API call)
-  const questions = await generateQuestionsOnly(
-    topic,
-    difficulty,
-    questionCount,
-    courseContext
+  console.log(
+    `\n🚀 Starting multi-stage quiz generation for ${questionCount} questions...\n`
   );
 
-  // Stage 2: Generate options for ALL questions (1 API call instead of N)
-  const allOptionsData = await generateOptionsForAllQuestions(
-    questions,
-    topic,
-    difficulty,
-    courseContext
-  );
+  // Stage 1: Generate questions (1 API call) - with retry
+  let questions;
+  let questionsRetryCount = 0;
+  const maxRetries = 2;
+
+  while (questionsRetryCount <= maxRetries) {
+    try {
+      questions = await generateQuestionsOnly(
+        topic,
+        difficulty,
+        questionCount,
+        courseContext
+      );
+      break; // Success, exit retry loop
+    } catch (error) {
+      questionsRetryCount++;
+      if (questionsRetryCount > maxRetries) {
+        console.error("❌ Failed to generate questions after all retries");
+        throw error;
+      }
+      console.warn(
+        `⚠️ Stage 1 failed, retrying (${questionsRetryCount}/${maxRetries})...`
+      );
+      await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait 2s before retry
+    }
+  }
+
+  // Stage 2: Generate options for ALL questions (1 API call instead of N) - with retry
+  let allOptionsData;
+  let optionsRetryCount = 0;
+
+  while (optionsRetryCount <= maxRetries) {
+    try {
+      allOptionsData = await generateOptionsForAllQuestions(
+        questions,
+        topic,
+        difficulty,
+        courseContext
+      );
+      break; // Success, exit retry loop
+    } catch (error) {
+      optionsRetryCount++;
+      if (optionsRetryCount > maxRetries) {
+        console.error("❌ Failed to generate options after all retries");
+        throw error;
+      }
+      console.warn(
+        `⚠️ Stage 2 failed, retrying (${optionsRetryCount}/${maxRetries})...`
+      );
+      await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait 2s before retry
+    }
+  }
 
   // Combine questions with their options
   const questionsWithOptions = questions.map((question, i) => ({
@@ -415,15 +520,43 @@ async function generateWithMultiStage(
   }));
 
   // Stage 3: Generate explanations for ALL questions (1 API call instead of N)
-  const allExplanations = await generateExplanationsForAllQuestions(
-    questionsWithOptions,
-    topic
-  );
+  let allExplanations;
+  try {
+    allExplanations = await generateExplanationsForAllQuestions(
+      questionsWithOptions,
+      topic
+    );
+  } catch (error) {
+    console.error("❌ Failed to generate all explanations:", error.message);
+    console.log("🔄 Generating fallback explanations...");
+
+    // Fallback: Generate explanations one by one for any missing
+    allExplanations = [];
+    for (let i = 0; i < questionsWithOptions.length; i++) {
+      try {
+        const singleExplanation = await generateSingleExplanation(
+          questionsWithOptions[i],
+          topic
+        );
+        allExplanations.push(singleExplanation);
+      } catch (singleError) {
+        console.error(
+          `⚠️ Failed to generate explanation for question ${
+            i + 1
+          }, using default`
+        );
+        allExplanations.push(
+          `The correct answer is "${questionsWithOptions[i].correctAnswerText}".`
+        );
+      }
+    }
+  }
 
   // Combine everything
   const questionsWithAnswers = questionsWithOptions.map((q, i) => ({
     ...q,
-    explanation: allExplanations[i],
+    explanation:
+      allExplanations[i] || `The correct answer is "${q.correctAnswerText}".`,
   }));
 
   // Stage 4: Verify and reconcile
@@ -475,13 +608,16 @@ export async function GenerateQuizQuestions(
     }
 
     // Original single-stage generation (kept for backward compatibility)
+    const modelName = getModelForService("generate-quiz");
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: modelName,
       generationConfig: {
         temperature: 0.7,
         // maxOutputTokens: 4096,
       },
     });
+
+    console.log(`🎯 Single-Stage Quiz Generation: Using ${modelName}`);
 
     const difficultyGuidelines = {
       beginner:
@@ -683,13 +819,16 @@ Before returning, verify that options[correctAnswer] === correctAnswerText for e
  */
 export async function GeneratePracticeQuestions(topic, context = "") {
   try {
+    const modelName = getModelForService("practice-questions");
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: modelName,
       generationConfig: {
         temperature: 0.8,
         // maxOutputTokens: 2048,
       },
     });
+
+    console.log(`🎯 Practice Questions: Using ${modelName}`);
 
     const prompt = `Generate 5 thoughtful practice questions about: "${topic}"
 

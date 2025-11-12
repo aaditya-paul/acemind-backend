@@ -1,31 +1,63 @@
 // Middleware to track Gemini API calls with accurate token counting
 const { trackApiCall } = require("./analyticsDB");
 
+// Import centralized model configuration (ESM import converted to require)
+let modelConfigModule;
+(async () => {
+  modelConfigModule = await import("./modelConfig.mjs");
+})();
+
 /**
- * Extract model from request based on endpoint
- * Different endpoints use different models based on accuracy requirements and cost
- *
- * Model Selection Strategy:
- * - gemini-2.5-flash: Highest accuracy, use ONLY for quiz generation ($0.30/$2.50 per 1M tokens)
- * - gemini-2.0-flash: Balanced accuracy/cost, use for notes and syllabus ($0.10/$0.40 per 1M tokens)
- * - gemini-2.0-flash-lite: Most cost-effective, use for chat/suggestions ($0.075/$0.30 per 1M tokens)
+ * Endpoints that actually use AI models and should have tokens/costs calculated
+ * All other endpoints will skip token counting
+ */
+const AI_ENDPOINTS = new Set([
+  "/api/generate-quiz",
+  "/api/notes",
+  "/api/expand-subtopics",
+  "/api/doubt-chat",
+  "/api/suggested-questions",
+  "/api/syllabus-context",
+  "/api/practice-questions",
+]);
+
+/**
+ * Check if endpoint uses AI and should have tokens counted
+ * @param {string} endpoint - API endpoint path
+ * @returns {boolean} True if endpoint uses AI
+ */
+function isAIEndpoint(endpoint) {
+  return AI_ENDPOINTS.has(endpoint);
+}
+
+/**
+ * Get model for endpoint using centralized configuration
+ * Returns null for non-AI endpoints
+ * Falls back to inline mapping during initial load
  */
 function getModelForEndpoint(endpoint) {
+  // Skip model lookup for non-AI endpoints
+  if (!isAIEndpoint(endpoint)) {
+    return null;
+  }
+
+  // Use centralized config if loaded
+  if (modelConfigModule?.getModelForEndpoint) {
+    return modelConfigModule.getModelForEndpoint(endpoint);
+  }
+
+  // Fallback during initial load
   const modelMap = {
-    // CRITICAL ACCURACY - Use 2.5-flash (most expensive but most accurate)
-    "/api/generate-quiz": "gemini-2.5-flash", // Quiz questions MUST be factually correct
-
-    // HIGH ACCURACY - Use 2.0-flash (balanced cost/accuracy)
-    "/api/submit": "gemini-2.0-flash", // Syllabus parsing needs accuracy
-    "/api/notes": "gemini-2.0-flash", // Educational notes need accuracy
-
-    // MEDIUM ACCURACY - Use 2.0-flash-lite (most cost-effective)
-    "/api/expand-subtopics": "gemini-2.0-flash-lite", // Subtopic suggestions can be more flexible
-    "/api/doubt-chat": "gemini-2.0-flash-lite", // Conversational, doesn't need highest accuracy
-    "/api/suggested-questions": "gemini-2.0-flash-lite", // Question suggestions can be creative
+    "/api/generate-quiz": "gemini-2.5-flash",
+    "/api/notes": "gemini-2.0-flash",
+    "/api/expand-subtopics": "gemini-2.0-flash",
+    "/api/doubt-chat": "gemini-2.0-flash",
+    "/api/suggested-questions": "gemini-2.0-flash",
+    "/api/syllabus-context": "gemini-2.0-flash",
+    "/api/practice-questions": "gemini-2.5-flash",
   };
 
-  return modelMap[endpoint] || "gemini-2.0-flash"; // Default to balanced model
+  return modelMap[endpoint] || null;
 }
 
 /**
@@ -64,10 +96,17 @@ function analyticsMiddleware() {
       userId = req.headers["x-user-id"];
     }
 
+    const model = getModelForEndpoint(req.path);
+
+    // Skip tracking for non-AI endpoints
+    if (model === null) {
+      return next();
+    }
+
     const requestData = {
       endpoint: req.path,
       userId,
-      model: getModelForEndpoint(req.path),
+      model,
       input: req.body,
       timestamp: startTime,
       metadata: {

@@ -1,73 +1,9 @@
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import { retryWithBackoff } from "./retryUtils.mjs";
+import { getModelForService } from "./modelConfig.mjs";
 
 dotenv.config();
-
-/**
- * Rate limiting configuration
- */
-const RATE_LIMIT_CONFIG = {
-  maxRetries: 3,
-  baseDelay: 2000, // 2 seconds
-  maxDelay: 30000, // 30 seconds
-};
-
-/**
- * Sleep utility for rate limiting
- */
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Retry wrapper with exponential backoff for API calls
- * Handles 503 (Service Unavailable), 429 (Too Many Requests), and other transient errors
- */
-async function retryWithBackoff(apiCall, callName = "API call") {
-  let lastError;
-
-  for (let attempt = 0; attempt < RATE_LIMIT_CONFIG.maxRetries; attempt++) {
-    try {
-      return await apiCall();
-    } catch (error) {
-      lastError = error;
-
-      // Check if it's a retryable error (rate limit, service unavailable, etc.)
-      const isRetryableError =
-        error.status === 429 || // Too Many Requests
-        error.status === 503 || // Service Unavailable
-        error.status === 500 || // Internal Server Error (sometimes transient)
-        error.message?.includes("429") ||
-        error.message?.includes("503") ||
-        error.message?.includes("quota") ||
-        error.message?.includes("rate limit") ||
-        error.message?.includes("service unavailable");
-
-      if (isRetryableError && attempt < RATE_LIMIT_CONFIG.maxRetries - 1) {
-        // Exponential backoff: 2s, 4s, 8s, etc.
-        const delay = Math.min(
-          RATE_LIMIT_CONFIG.baseDelay * Math.pow(2, attempt),
-          RATE_LIMIT_CONFIG.maxDelay
-        );
-
-        console.warn(
-          `⚠️  ${
-            error.status === 503 ? "Service unavailable" : "Rate limit"
-          } for ${callName}. Retrying in ${delay / 1000}s... (Attempt ${
-            attempt + 1
-          }/${RATE_LIMIT_CONFIG.maxRetries})`
-        );
-        await sleep(delay);
-        continue;
-      }
-
-      // If it's not a retryable error or we've exhausted retries, throw
-      throw error;
-    }
-  }
-
-  throw lastError;
-}
 
 export async function GetSyllabusContext(topic, syllabus) {
   const googleGenAI = new GoogleGenAI({
@@ -81,10 +17,11 @@ export async function GetSyllabusContext(topic, syllabus) {
     The context should be a short summary of the syllabus, not more than 150 words.
   `;
 
+  const model = getModelForService("syllabus-context");
   const response = await retryWithBackoff(
     async () =>
       await googleGenAI.models.generateContent({
-        model: "gemini-2.0-flash", // Balanced accuracy for syllabus parsing
+        model: model,
         contents: [
           {
             role: "user",

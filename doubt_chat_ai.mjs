@@ -1,5 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import { retryWithBackoff } from "./retryUtils.mjs";
+import { getModelForService } from "./modelConfig.mjs";
 
 dotenv.config();
 
@@ -93,15 +95,20 @@ Please provide your answer now:
     console.log("📌 Has selected text:", !!selectedText);
     console.log("💬 Conversation history length:", conversationHistory.length);
 
-    const response = await genAI.models.generateContent({
-      model: "gemini-2.0-flash-lite", // Cost-effective for conversational chat
-      contents: [{ role: "user", text: prompt }],
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 2048,
-        topP: 0.9,
-      },
-    });
+    const model = getModelForService("doubt-chat");
+    const response = await retryWithBackoff(
+      async () =>
+        await genAI.models.generateContent({
+          model: model,
+          contents: [{ role: "user", text: prompt }],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 2048,
+            topP: 0.9,
+          },
+        }),
+      "ProcessDoubtWithGemini"
+    );
 
     const answer = response.text;
     console.log("✅ Doubt processed successfully");
@@ -142,14 +149,19 @@ Return ONLY a JSON array of strings, like: ["Question 1?", "Question 2?", "Quest
 `;
 
   try {
-    const response = await genAI.models.generateContent({
-      model: "gemini-2.0-flash-lite", // Cost-effective for question suggestions
-      contents: [{ role: "user", text: prompt }],
-      generationConfig: {
-        temperature: 0.8,
-        maxOutputTokens: 512,
-      },
-    });
+    const model = getModelForService("suggested-questions");
+    const response = await retryWithBackoff(
+      async () =>
+        await genAI.models.generateContent({
+          model: model,
+          contents: [{ role: "user", text: prompt }],
+          generationConfig: {
+            temperature: 0.8,
+            maxOutputTokens: 512,
+          },
+        }),
+      "GenerateSuggestedQuestions"
+    );
 
     const text = response.text;
     // Extract JSON array from response
