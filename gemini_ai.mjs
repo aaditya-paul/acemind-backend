@@ -55,7 +55,7 @@ Syllabus: ${syllabus}
   try {
     console.log("⚙️ Asking Gemini...");
     const response = await genAI.models.generateContent({
-      model: "gemini-2.0-flash", // Cost optimization: $0.10/$0.40 (3x cheaper, good for syllabus parsing)
+      model: "gemini-2.0-flash", // Balanced accuracy for syllabus parsing
       contents: [{ role: "user", text: prompt }],
     });
 

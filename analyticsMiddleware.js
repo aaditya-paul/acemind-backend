@@ -3,24 +3,29 @@ const { trackApiCall } = require("./analyticsDB");
 
 /**
  * Extract model from request based on endpoint
- * Different endpoints use different models
+ * Different endpoints use different models based on accuracy requirements and cost
+ *
+ * Model Selection Strategy:
+ * - gemini-2.5-flash: Highest accuracy, use ONLY for quiz generation ($0.30/$2.50 per 1M tokens)
+ * - gemini-2.0-flash: Balanced accuracy/cost, use for notes and syllabus ($0.10/$0.40 per 1M tokens)
+ * - gemini-2.0-flash-lite: Most cost-effective, use for chat/suggestions ($0.075/$0.30 per 1M tokens)
  */
 function getModelForEndpoint(endpoint) {
   const modelMap = {
-    // Priority 1: Maximum Accuracy (Factual Correctness Critical)
-    "/api/generate-quiz": "gemini-2.5-flash", // $0.30/$2.50 - Quiz accuracy is TOP priority
+    // CRITICAL ACCURACY - Use 2.5-flash (most expensive but most accurate)
+    "/api/generate-quiz": "gemini-2.5-flash", // Quiz questions MUST be factually correct
 
-    // Priority 2: High Accuracy (Educational Content)
-    "/api/notes": "gemini-2.0-flash", // $0.10/$0.40 - 3x cheaper, still accurate for notes
-    "/api/submit": "gemini-2.0-flash", // $0.10/$0.40 - Syllabus context generation
+    // HIGH ACCURACY - Use 2.0-flash (balanced cost/accuracy)
+    "/api/submit": "gemini-2.0-flash", // Syllabus parsing needs accuracy
+    "/api/notes": "gemini-2.0-flash", // Educational notes need accuracy
 
-    // Priority 3: Good Accuracy (Interactive Features)
-    "/api/expand-subtopics": "gemini-1.5-flash", // $0.075/$0.30 - 4x cheaper, good for subtopic expansion
-    "/api/doubt-chat": "gemini-1.5-flash", // $0.075/$0.30 - Conversational AI, cost-effective
-    "/api/suggested-questions": "gemini-1.5-flash", // $0.075/$0.30 - Question suggestions don't need max accuracy
+    // MEDIUM ACCURACY - Use 2.0-flash-lite (most cost-effective)
+    "/api/expand-subtopics": "gemini-2.0-flash-lite", // Subtopic suggestions can be more flexible
+    "/api/doubt-chat": "gemini-2.0-flash-lite", // Conversational, doesn't need highest accuracy
+    "/api/suggested-questions": "gemini-2.0-flash-lite", // Question suggestions can be creative
   };
 
-  return modelMap[endpoint] || "gemini-1.5-flash"; // Default to most cost-effective
+  return modelMap[endpoint] || "gemini-2.0-flash"; // Default to balanced model
 }
 
 /**

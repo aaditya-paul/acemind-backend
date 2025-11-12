@@ -84,7 +84,7 @@ export async function GetSyllabusContext(topic, syllabus) {
   const response = await retryWithBackoff(
     async () =>
       await googleGenAI.models.generateContent({
-        model: "gemini-2.0-flash", // Cost optimization: $0.10/$0.40 (3x cheaper than 2.5-flash)
+        model: "gemini-2.0-flash", // Balanced accuracy for syllabus parsing
         contents: [
           {
             role: "user",

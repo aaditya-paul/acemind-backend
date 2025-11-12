@@ -202,7 +202,7 @@ export async function GetNotesGemini(topic, syllabus, subtopic) {
       );
 
       const result = await genAI.models.generateContent({
-        model: "gemini-2.0-flash", // Cost optimization: $0.10/$0.40 (3x cheaper, still accurate for educational notes)
+        model: "gemini-2.0-flash", // Balanced accuracy for educational notes
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         config: {
           responseMimeType: "application/json",

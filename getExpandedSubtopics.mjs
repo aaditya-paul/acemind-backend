@@ -164,7 +164,7 @@ export async function GetExpandedSubtopics(
       );
 
       const response = await googleGenAI.models.generateContent({
-        model: "gemini-1.5-flash", // Cost optimization: $0.075/$0.30 (4x cheaper, good for subtopic expansion)
+        model: "gemini-2.0-flash-lite", // Cost-effective for subtopic suggestions
         contents: [
           {
             role: "user",

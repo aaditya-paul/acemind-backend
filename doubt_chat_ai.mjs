@@ -94,7 +94,7 @@ Please provide your answer now:
     console.log("💬 Conversation history length:", conversationHistory.length);
 
     const response = await genAI.models.generateContent({
-      model: "gemini-1.5-flash", // Cost optimization: $0.075/$0.30 (4x cheaper, excellent for conversational AI)
+      model: "gemini-2.0-flash-lite", // Cost-effective for conversational chat
       contents: [{ role: "user", text: prompt }],
       generationConfig: {
         temperature: 0.7,
@@ -143,7 +143,7 @@ Return ONLY a JSON array of strings, like: ["Question 1?", "Question 2?", "Quest
 
   try {
     const response = await genAI.models.generateContent({
-      model: "gemini-1.5-flash", // Cost optimization: $0.075/$0.30 (4x cheaper, good for question suggestions)
+      model: "gemini-2.0-flash-lite", // Cost-effective for question suggestions
       contents: [{ role: "user", text: prompt }],
       generationConfig: {
         temperature: 0.8,
