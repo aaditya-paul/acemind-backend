@@ -7,6 +7,7 @@ logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+firebase-service.json
 
 # Runtime data
 pids/
@@ -20,6 +21,9 @@ pids/
 
 # Quiz session data (contains answers)
 quiz-sessions.json
+
+# Analytics data (sensitive user activity)
+analytics-data.json
 
 # Build output
 dist/

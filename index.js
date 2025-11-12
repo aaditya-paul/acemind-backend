@@ -1,3 +1,6 @@
+// Load environment variables FIRST (before any other imports that use them)
+require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
 const fs = require("fs").promises;
@@ -10,9 +13,24 @@ const {
   generateSessionId,
 } = require("./quizSecurity");
 
+// NEW: Firebase-based analytics with token counting
+const { initializeFirebaseAdmin } = require("./firebaseAdmin");
+const {
+  getAnalyticsSummary,
+  getDailyStats,
+  getUserDetails,
+} = require("./analyticsDB");
+const { analyticsMiddleware } = require("./analyticsMiddleware");
+
+// Initialize Firebase Admin SDK
+initializeFirebaseAdmin();
+
 // Use dynamic import for ES modules
 const app = express();
 const port = process.env.PORT || 8000;
+
+// Admin password (change this in production!)
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 // File-based storage for quiz sessions (persists across restarts)
 const SESSIONS_FILE = path.join(__dirname, "quiz-sessions.json");
@@ -74,6 +92,9 @@ loadSessions();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// NEW: Analytics middleware with token counting and cost calculation
+app.use(analyticsMiddleware());
 
 app.post("/api/expand-subtopics", async (req, res) => {
   const {
@@ -948,6 +969,186 @@ app.post("/api/submit-quiz", async (req, res) => {
   }
 });
 
+// ============================================================================
+// ADMIN ANALYTICS ENDPOINTS
+// ============================================================================
+
+// Middleware to check admin password
+function requireAdminAuth(req, res, next) {
+  const password = req.headers["x-admin-password"] || req.query.password;
+
+  if (password !== ADMIN_PASSWORD) {
+    return res.status(401).json({
+      success: false,
+      message: "Unauthorized - Invalid admin password",
+    });
+  }
+
+  next();
+}
+
+// Admin dashboard - main analytics (UPDATED: Firestore)
+app.get("/api/admin/analytics", requireAdminAuth, async (req, res) => {
+  try {
+    const summary = await getAnalyticsSummary();
+    res.json({
+      success: true,
+      data: summary,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("❌ Error fetching analytics:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch analytics",
+      error: error.message,
+    });
+  }
+});
+
+// Daily stats for charts (UPDATED: Firestore)
+app.get("/api/admin/daily-stats", requireAdminAuth, async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 30;
+    const stats = await getDailyStats(days);
+
+    res.json({
+      success: true,
+      data: stats,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("❌ Error fetching daily stats:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch daily stats",
+      error: error.message,
+    });
+  }
+});
+
+// Call details - get detailed information about a specific API call
+app.get("/api/admin/call/:callId", requireAdminAuth, async (req, res) => {
+  try {
+    const callId = req.params.callId;
+    const { getCallDetails } = require("./analyticsDB");
+    const callDetails = await getCallDetails(callId);
+
+    if (!callDetails) {
+      return res.status(404).json({
+        success: false,
+        message: "Call not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: callDetails,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("❌ Error fetching call details:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch call details",
+      error: error.message,
+    });
+  }
+});
+
+// All activity with date filters and pagination (NEW)
+app.get("/api/admin/all-activity", requireAdminAuth, async (req, res) => {
+  try {
+    const { getAllActivity } = require("./analyticsDB");
+    const { startDate, endDate } = req.query;
+
+    const filters = {};
+    const now = Date.now();
+
+    if (startDate) {
+      const start = parseInt(startDate);
+      // Server-side validation: reject future dates
+      if (start > now) {
+        return res.status(400).json({
+          success: false,
+          message: "Start date cannot be in the future",
+        });
+      }
+      filters.startDate = start;
+    }
+
+    if (endDate) {
+      const end = parseInt(endDate);
+      // Server-side validation: reject future dates
+      if (end > now) {
+        return res.status(400).json({
+          success: false,
+          message: "End date cannot be in the future",
+        });
+      }
+      filters.endDate = end;
+    }
+
+    // Validate that start date is not after end date
+    if (
+      filters.startDate &&
+      filters.endDate &&
+      filters.startDate > filters.endDate
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Start date cannot be after end date",
+      });
+    }
+
+    const allActivity = await getAllActivity(filters);
+
+    res.json({
+      success: true,
+      data: allActivity,
+      count: allActivity.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("❌ Error fetching all activity:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch activity",
+      error: error.message,
+    });
+  }
+});
+
+// User details (UPDATED: Firestore)
+app.get("/api/admin/user/:userId", requireAdminAuth, async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const userDetails = await getUserDetails(userId);
+
+    if (!userDetails) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: userDetails,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("❌ Error fetching user details:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch user details",
+      error: error.message,
+    });
+  }
+});
+
+// ============================================================================
+
 // Health check endpoint
 app.get("/api/health", (req, res) => {
   res.json({
@@ -986,4 +1187,9 @@ app.listen(port, "0.0.0.0", () => {
     `Submit endpoint (Gemini): http://localhost:${port}/api/submit-gemini`
   );
   console.log(`Server accessible from network at: http://192.168.x.x:${port}`);
+  console.log(
+    `\n📊 ADMIN ANALYTICS: http://localhost:${port}/api/admin/analytics`
+  );
+  console.log(`   Password: ${ADMIN_PASSWORD}`);
+  console.log(`   Frontend: http://localhost:3000/admin/analytics\n`);
 });
