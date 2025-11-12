@@ -22,6 +22,13 @@ const {
 } = require("./analyticsDB");
 const { analyticsMiddleware } = require("./analyticsMiddleware");
 
+// NEW: Firebase-based quiz session storage
+const {
+  storeQuizSession,
+  getQuizSession,
+  deleteQuizSession,
+} = require("./quizSessionManager");
+
 // Initialize Firebase Admin SDK
 initializeFirebaseAdmin();
 
@@ -32,61 +39,9 @@ const port = process.env.PORT || 8000;
 // Admin password (change this in production!)
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
-// File-based storage for quiz sessions (persists across restarts)
-const SESSIONS_FILE = path.join(__dirname, "quiz-sessions.json");
-const quizSessions = new Map();
-
-// Load sessions from file on startup
-async function loadSessions() {
-  try {
-    const data = await fs.readFile(SESSIONS_FILE, "utf8");
-    const sessions = JSON.parse(data);
-
-    // Filter out expired sessions and load valid ones
-    const now = Date.now();
-    let loadedCount = 0;
-
-    for (const [sessionId, session] of Object.entries(sessions)) {
-      if (session.expiresAt > now) {
-        quizSessions.set(sessionId, session);
-        loadedCount++;
-      }
-    }
-
-    console.log(`📂 Loaded ${loadedCount} active quiz sessions from disk`);
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      console.log("📂 No existing sessions file found, starting fresh");
-    } else {
-      console.error("⚠️ Error loading sessions:", error.message);
-    }
-  }
-}
-
-// Save sessions to file
-async function saveSessions() {
-  try {
-    const sessionsObj = Object.fromEntries(quizSessions);
-    await fs.writeFile(
-      SESSIONS_FILE,
-      JSON.stringify(sessionsObj, null, 2),
-      "utf8"
-    );
-    console.log(`💾 Saved ${quizSessions.size} sessions to disk`);
-  } catch (error) {
-    console.error("⚠️ Error saving sessions:", error.message);
-  }
-}
-
-// Auto-save sessions every 30 seconds
-setInterval(() => {
-  if (quizSessions.size > 0) {
-    saveSessions();
-  }
-}, 30000);
-
-// Load sessions on startup
-loadSessions();
+console.log(
+  "� Quiz sessions now stored in Firebase - no server restart needed!"
+);
 
 // Middleware
 app.use(cors());
@@ -540,15 +495,30 @@ app.post("/api/submit", async (req, res) => {
       });
     } catch (aiError) {
       console.error(`Error with ${aiProvider} AI processing:`, aiError);
-      // Send success response even if AI fails
-      res.json({
-        success: true,
-        message: `Data received successfully (${aiProvider} AI processing failed)`,
-        data: {
-          topic,
-          syllabus,
-          aiProvider,
-          error: aiError.message,
+
+      // Determine appropriate status code based on error
+      const statusCode =
+        aiError.status === 503
+          ? 503
+          : aiError.status === 429
+          ? 429
+          : aiError.status >= 400
+          ? aiError.status
+          : 500;
+
+      // Return proper error response so analytics tracks it as failed call
+      res.status(statusCode).json({
+        success: false,
+        message:
+          aiError.status === 503
+            ? "AI service temporarily unavailable. Please try again in a few moments."
+            : aiError.status === 429
+            ? "Rate limit exceeded. Please try again later."
+            : `AI processing failed: ${aiError.message}`,
+        error: {
+          type: "AI_SERVICE_ERROR",
+          details: aiError.message,
+          status: aiError.status || "unknown",
         },
       });
     }
@@ -803,33 +773,20 @@ app.post("/api/generate-quiz", async (req, res) => {
     const timeLimit = req.body.timeLimit || 600; // Default 10 minutes in seconds
     const sessionHash = generateQuizHash(sessionId, startTime, timeLimit);
 
-    // Store full questions with answers server-side
-    quizSessions.set(sessionId, {
-      questions, // Full questions with correct answers
-      startTime,
-      timeLimit,
-      sessionHash,
-      topic: topic.substring(0, 100),
-      difficulty,
-      expiresAt: startTime + (timeLimit + 300) * 1000, // Expires 5 min after time limit
-    });
-
-    // Save to disk immediately
-    saveSessions();
-
-    // Clean up expired sessions periodically
-    const now = Date.now();
-    let cleanedCount = 0;
-    for (const [sid, session] of quizSessions.entries()) {
-      if (session.expiresAt < now) {
-        quizSessions.delete(sid);
-        cleanedCount++;
-      }
-    }
-    if (cleanedCount > 0) {
-      console.log(`🧹 Cleaned up ${cleanedCount} expired sessions`);
-      saveSessions();
-    }
+    // Store full questions with answers in Firebase
+    await storeQuizSession(
+      sessionId,
+      {
+        questions, // Full questions with correct answers
+        userId: req.body.userId || "anonymous",
+        startTime,
+        timeLimit,
+        sessionHash,
+        topic: topic.substring(0, 100),
+        difficulty,
+      },
+      Math.ceil((timeLimit + 300) / 60) // Expires 5 min after time limit (in minutes)
+    );
 
     // Send sanitized questions (without correct answers) to client
     const sanitizedQuestions = sanitizeQuestionsForClient(questions);
@@ -881,7 +838,8 @@ app.post("/api/generate-quiz", async (req, res) => {
 // Secure quiz submission endpoint
 app.post("/api/submit-quiz", async (req, res) => {
   try {
-    const { sessionId, sessionHash, userAnswers, submitTime } = req.body;
+    const { sessionId, sessionHash, userAnswers, submitTime, userId } =
+      req.body;
 
     // Validate required fields
     if (!sessionId || !sessionHash || !userAnswers || !submitTime) {
@@ -891,8 +849,8 @@ app.post("/api/submit-quiz", async (req, res) => {
       });
     }
 
-    // Retrieve quiz session
-    const session = quizSessions.get(sessionId);
+    // Retrieve quiz session from Firebase
+    const session = await getQuizSession(sessionId);
     if (!session) {
       return res.status(404).json({
         success: false,
@@ -952,8 +910,7 @@ app.post("/api/submit-quiz", async (req, res) => {
     };
 
     // Clean up session after successful submission
-    quizSessions.delete(sessionId);
-    saveSessions();
+    await deleteQuizSession(sessionId);
 
     res.json({
       success: true,

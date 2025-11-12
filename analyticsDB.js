@@ -2,42 +2,65 @@
 const { getFirestoreDB } = require("./firebaseAdmin");
 
 /**
- * Gemini API Pricing (as of November 2025) - Per 1 Million Tokens
- * Source: https://ai.google.dev/pricing
+ * Gemini API Pricing (as of November 12, 2025) - Per 1 Million Tokens
+ * Source: https://ai.google.dev/pricing (Paid Tier)
+ * Last verified: November 12, 2025
  */
 const PRICING = {
-  // Flash Models (Fast, Cost-Effective)
+  // Gemini 2.5 Models - Latest Generation
   "gemini-2.5-flash": {
-    input: 0.075, // $0.075 per 1M tokens
-    output: 0.3, // $0.30 per 1M tokens
-    description: "Flash 2.5 - Production",
+    input: 0.3, // $0.30 per 1M tokens (text/image/video)
+    output: 2.5, // $2.50 per 1M tokens (includes thinking tokens)
+    description: "Flash 2.5 - Hybrid Reasoning, 1M context",
+  },
+  "gemini-2.5-flash-preview": {
+    input: 0.3,
+    output: 2.5,
+    description: "Flash 2.5 Preview - Large scale processing",
+  },
+  "gemini-2.5-flash-lite": {
+    input: 0.1, // Most cost-effective
+    output: 0.4,
+    description: "Flash 2.5 Lite - Most cost effective",
+  },
+  "gemini-2.5-pro": {
+    input: 1.25, // $1.25 per 1M tokens (≤200k tokens)
+    output: 10.0, // $10.00 per 1M tokens (≤200k tokens, includes thinking)
+    description: "Pro 2.5 - State-of-the-art, excels at coding",
+  },
+
+  // Gemini 2.0 Models
+  "gemini-2.0-flash": {
+    input: 0.1, // $0.10 per 1M tokens (text/image/video)
+    output: 0.4,
+    description: "Flash 2.0 - Balanced, built for Agents",
+  },
+  "gemini-2.0-flash-lite": {
+    input: 0.075,
+    output: 0.3,
+    description: "Flash 2.0 Lite - Most cost effective 2.0",
   },
   "gemini-2.0-flash-exp": {
-    input: 0.0, // FREE (Experimental)
+    input: 0.0, // FREE (Experimental/Free Tier)
     output: 0.0,
-    description: "Flash 2.0 Exp - FREE",
+    description: "Flash 2.0 Exp - FREE (Free Tier Only)",
   },
+
+  // Gemini 1.5 Models - Previous Generation
   "gemini-1.5-flash": {
     input: 0.075,
     output: 0.3,
-    description: "Flash 1.5 - Production",
+    description: "Flash 1.5 - Previous gen, still available",
   },
-
-  // Pro Models (More Capable)
   "gemini-1.5-pro": {
-    input: 1.25, // $1.25 per 1M tokens
-    output: 5.0, // $5.00 per 1M tokens
-    description: "Pro 1.5 - Advanced",
-  },
-  "gemini-2.0-pro": {
     input: 1.25,
     output: 5.0,
-    description: "Pro 2.0 - Advanced",
+    description: "Pro 1.5 - Advanced previous gen",
   },
 };
 
 // USD to INR conversion rate (update periodically)
-const USD_TO_INR = 83;
+const USD_TO_INR = 88.58;
 
 /**
  * Sanitize endpoint name for use as Firestore field name

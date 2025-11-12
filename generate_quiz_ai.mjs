@@ -26,7 +26,7 @@ function sleep(ms) {
 
 /**
  * Retry wrapper with exponential backoff for API calls
- * Handles 429 (Too Many Requests) and other transient errors
+ * Handles 503 (Service Unavailable), 429 (Too Many Requests), and other transient errors
  */
 async function retryWithBackoff(apiCall, callName = "API call") {
   let lastError;
@@ -37,14 +37,18 @@ async function retryWithBackoff(apiCall, callName = "API call") {
     } catch (error) {
       lastError = error;
 
-      // Check if it's a rate limit error
-      const isRateLimitError =
+      // Check if it's a retryable error (rate limit, service unavailable, etc.)
+      const isRetryableError =
+        error.status === 429 || // Too Many Requests
+        error.status === 503 || // Service Unavailable
+        error.status === 500 || // Internal Server Error (sometimes transient)
         error.message?.includes("429") ||
+        error.message?.includes("503") ||
         error.message?.includes("quota") ||
         error.message?.includes("rate limit") ||
-        error.status === 429;
+        error.message?.includes("service unavailable");
 
-      if (isRateLimitError && attempt < RATE_LIMIT_CONFIG.maxRetries - 1) {
+      if (isRetryableError && attempt < RATE_LIMIT_CONFIG.maxRetries - 1) {
         // Exponential backoff: 2s, 4s, 8s, etc.
         const delay = Math.min(
           RATE_LIMIT_CONFIG.baseDelay * Math.pow(2, attempt),
@@ -52,15 +56,17 @@ async function retryWithBackoff(apiCall, callName = "API call") {
         );
 
         console.warn(
-          `⚠️  Rate limit hit for ${callName}. Retrying in ${
-            delay / 1000
-          }s... (Attempt ${attempt + 1}/${RATE_LIMIT_CONFIG.maxRetries})`
+          `⚠️  ${
+            error.status === 503 ? "Service unavailable" : "Rate limit"
+          } for ${callName}. Retrying in ${delay / 1000}s... (Attempt ${
+            attempt + 1
+          }/${RATE_LIMIT_CONFIG.maxRetries})`
         );
         await sleep(delay);
         continue;
       }
 
-      // If it's not a rate limit error or we've exhausted retries, throw
+      // If it's not a retryable error or we've exhausted retries, throw
       throw error;
     }
   }
@@ -85,7 +91,7 @@ async function generateQuestionsOnly(
   courseContext
 ) {
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash-exp",
+    model: "gemini-2.5-flash",
     generationConfig: {
       temperature: 0.7,
       // maxOutputTokens: 2048,
@@ -470,7 +476,7 @@ export async function GenerateQuizQuestions(
 
     // Original single-stage generation (kept for backward compatibility)
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash-exp",
+      model: "gemini-2.5-flash",
       generationConfig: {
         temperature: 0.7,
         // maxOutputTokens: 4096,
@@ -678,7 +684,7 @@ Before returning, verify that options[correctAnswer] === correctAnswerText for e
 export async function GeneratePracticeQuestions(topic, context = "") {
   try {
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash-exp",
+      model: "gemini-2.5-flash",
       generationConfig: {
         temperature: 0.8,
         // maxOutputTokens: 2048,

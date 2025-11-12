@@ -10,12 +10,12 @@ function getModelForEndpoint(endpoint) {
     "/api/submit": "gemini-2.5-flash",
     "/api/expand-subtopics": "gemini-2.5-flash",
     "/api/notes": "gemini-2.5-flash",
-    "/api/doubt-chat": "gemini-2.0-flash-exp", // FREE
-    "/api/generate-quiz": "gemini-2.0-flash-exp", // FREE
-    "/api/suggested-questions": "gemini-2.0-flash-exp", // FREE
+    "/api/doubt-chat": "gemini-2.5-flash", // PAID - uses 2.5-flash for quality
+    "/api/generate-quiz": "gemini-2.5-flash", // PAID - uses 2.5-flash for quality
+    "/api/suggested-questions": "gemini-2.5-flash", // PAID - uses 2.5-flash for quality
   };
 
-  return modelMap[endpoint] || "gemini-2.5-flash";
+  return modelMap[endpoint] || "";
 }
 
 /**
@@ -39,9 +39,24 @@ function analyticsMiddleware() {
 
     // Store request data and start timer
     const startTime = Date.now();
+
+    // Extract userId from various possible locations
+    let userId = "anonymous";
+    if (req.body?.userId) {
+      userId = req.body.userId;
+    } else if (req.body?.uid) {
+      userId = req.body.uid;
+    } else if (req.body?.user_id) {
+      userId = req.body.user_id;
+    } else if (req.query?.userId) {
+      userId = req.query.userId;
+    } else if (req.headers?.["x-user-id"]) {
+      userId = req.headers["x-user-id"];
+    }
+
     const requestData = {
       endpoint: req.path,
-      userId: req.body?.userId || req.body?.uid || "anonymous",
+      userId,
       model: getModelForEndpoint(req.path),
       input: req.body,
       timestamp: startTime,

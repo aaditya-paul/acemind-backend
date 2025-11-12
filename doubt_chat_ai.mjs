@@ -94,7 +94,7 @@ Please provide your answer now:
     console.log("💬 Conversation history length:", conversationHistory.length);
 
     const response = await genAI.models.generateContent({
-      model: "gemini-2.0-flash-exp",
+      model: "gemini-2.5-flash",
       contents: [{ role: "user", text: prompt }],
       generationConfig: {
         temperature: 0.7,
@@ -143,7 +143,7 @@ Return ONLY a JSON array of strings, like: ["Question 1?", "Question 2?", "Quest
 
   try {
     const response = await genAI.models.generateContent({
-      model: "gemini-2.0-flash-exp",
+      model: "gemini-2.5-flash",
       contents: [{ role: "user", text: prompt }],
       generationConfig: {
         temperature: 0.8,
