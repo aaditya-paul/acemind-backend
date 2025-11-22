@@ -404,7 +404,11 @@ Generate EXACTLY ${questionsWithOptions.length} explanations.`;
  * Fallback: Generate a single explanation with structured output
  * Used when batch generation fails
  */
-async function generateSingleExplanation(questionWithOptions, topic, difficulty) {
+async function generateSingleExplanation(
+  questionWithOptions,
+  topic,
+  difficulty
+) {
   const stageConfig = getQuizStageConfig("explanations");
 
   const explanationSchema = {
@@ -909,7 +913,9 @@ async function generateWithMultiStage(
       }
 
       // If we couldn't fix it or it was another error, we have to drop it
-      console.warn(`   🗑️ Dropping Question ${i + 1} due to validation failure`);
+      console.warn(
+        `   🗑️ Dropping Question ${i + 1} due to validation failure`
+      );
     }
   }
 

@@ -108,13 +108,13 @@ export const SERVICE_MODEL_MAP = {
       },
       // Stage 2: Generate options for all questions (batched)
       options: {
-        model: "gemini-2.5-flash-lite",
+        model: "gemini-2.5-flash",
         temperature: 0.3,
         reason: "Generate accurate multiple-choice options",
       },
       // Stage 3: Generate explanations for all questions (batched)
       explanations: {
-        model: "gemini-2.5-flash-lite",
+        model: "gemini-2.5-flash",
         temperature: 0.3,
         reason: "Generate brief, to-the-point explanations",
       },
