@@ -109,19 +109,19 @@ export const SERVICE_MODEL_MAP = {
       // Stage 2: Generate options for all questions (batched)
       options: {
         model: "gemini-2.5-flash-lite",
-        temperature: 0.7,
+        temperature: 0.3,
         reason: "Generate accurate multiple-choice options",
       },
       // Stage 3: Generate explanations for all questions (batched)
       explanations: {
         model: "gemini-2.5-flash-lite",
-        temperature: 0.7,
+        temperature: 0.3,
         reason: "Generate brief, to-the-point explanations",
       },
       // Stage 4: AI fact-checking and correction (NEW)
       "fact-check": {
-        model: "gemini-2.5-flash-lite",
-        temperature: 0.15, // ULTRA-LOW: Maximum accuracy for validation
+        model: "gemini-2.5-flash", // Upgraded from lite for better reasoning
+        temperature: 0.1, // ULTRA-LOW: Maximum accuracy for validation
         reason: "Verify and correct all questions for accuracy",
       },
     },

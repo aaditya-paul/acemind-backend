@@ -47,7 +47,12 @@ async function generateQuestionsOnly(
     expert: "Complex scenarios. Deep technical understanding required.",
   };
 
-  const prompt = `Generate ONLY ${questionCount} UNIQUE and CONCISE quiz questions for the topic: "${topic}".
+  const isAdvanced = difficulty === "advanced" || difficulty === "expert";
+  const lengthGuideline = isAdvanced
+    ? "1. Questions should be COMPLEX, DETAILED, and CHALLENGING (25-50 words). Use scenarios, case studies, or multi-step problems."
+    : "1. Keep questions SHORT and DIRECT (maximum 15-20 words)";
+
+  const prompt = `Generate ONLY ${questionCount} UNIQUE quiz questions for the topic: "${topic}".
 
 Difficulty Level: ${difficulty}
 Guidelines: ${
@@ -57,7 +62,7 @@ Guidelines: ${
 ${courseContext ? `Course Context:\n${courseContext}\n` : ""}
 
 CRITICAL REQUIREMENTS:
-1. Keep questions SHORT and DIRECT (maximum 15-20 words)
+${lengthGuideline}
 2. Each question should be clear and test ${difficulty}-level understanding
 3. Questions MUST be diverse and cover DIFFERENT aspects of the topic
 4. **ABSOLUTELY NO DUPLICATE QUESTIONS** - each question must be unique
@@ -159,6 +164,11 @@ async function generateOptionsForAllQuestions(
     `🎯 Stage 2 (Options): Using ${stageConfig.model} (temp: ${stageConfig.temperature})`
   );
 
+  const isAdvanced = difficulty === "advanced" || difficulty === "expert";
+  const optionLengthGuideline = isAdvanced
+    ? "4. Options can be detailed (10-25 words) to match the complexity of the question."
+    : "4. Keep options SHORT and CONCISE (5-10 words each, max 15 words)";
+
   const questionsNumbered = questions
     .map((q, i) => `${i + 1}. ${q}`)
     .join("\n");
@@ -178,7 +188,7 @@ Requirements for EACH question:
 1. Generate EXACTLY 4 distinct options
 2. Only ONE option should be correct
 3. Make incorrect options plausible but clearly wrong
-4. Keep options SHORT and CONCISE (5-10 words each, max 15 words)
+${optionLengthGuideline}
 5. Ensure all options are roughly similar in length
 6. THINK CAREFULLY about which option is correct before deciding
 7. Double-check any numerical values, formulas, or technical details
@@ -272,7 +282,8 @@ CRITICAL:
  */
 async function generateExplanationsForAllQuestions(
   questionsWithOptions,
-  topic
+  topic,
+  difficulty
 ) {
   const stageConfig = getQuizStageConfig("explanations");
   const model = genAI.getGenerativeModel({
@@ -295,6 +306,11 @@ Correct Answer: "${q.correctAnswerText}"`;
     })
     .join("\n\n");
 
+  const isAdvanced = difficulty === "advanced" || difficulty === "expert";
+  const explanationGuideline = isAdvanced
+    ? "1. Provide DETAILED, COMPREHENSIVE explanations (3-5 sentences, 50-80 words). Break down the logic step-by-step and explain why the answer is correct in depth."
+    : "1. Keep explanations VERY SHORT (1-2 sentences maximum, 20-30 words)";
+
   const prompt = `Provide clear, educational explanations for these ${questionsWithOptions.length} quiz questions.
 
 Topic: "${topic}"
@@ -315,7 +331,7 @@ After generating each explanation, THINK TWICE:
 - Would this explanation withstand peer review?
 
 Requirements for EACH explanation:
-1. Keep explanations VERY SHORT (1-2 sentences maximum, 20-30 words)
+${explanationGuideline}
 2. Explain WHY the correct answer is correct (briefly)
 3. NO need to explain why other options are wrong (unless critical)
 4. Get straight to the point - no fluff or unnecessary details
@@ -388,7 +404,7 @@ Generate EXACTLY ${questionsWithOptions.length} explanations.`;
  * Fallback: Generate a single explanation with structured output
  * Used when batch generation fails
  */
-async function generateSingleExplanation(questionWithOptions, topic) {
+async function generateSingleExplanation(questionWithOptions, topic, difficulty) {
   const stageConfig = getQuizStageConfig("explanations");
 
   const explanationSchema = {
@@ -412,6 +428,11 @@ async function generateSingleExplanation(questionWithOptions, topic) {
     },
   });
 
+  const isAdvanced = difficulty === "advanced" || difficulty === "expert";
+  const explanationGuideline = isAdvanced
+    ? "1. Provide DETAILED, COMPREHENSIVE explanations (3-5 sentences, 50-80 words)."
+    : "1. Keep explanation VERY SHORT (1-2 sentences, 20-30 words maximum)";
+
   const prompt = `Provide a clear, educational explanation for this quiz question.
 
 Topic: "${topic}"
@@ -426,7 +447,7 @@ VERIFICATION STEPS:
 3. Ensure reasoning is logically sound
 
 Requirements:
-1. Keep explanation VERY SHORT (1-2 sentences, 20-30 words maximum)
+${explanationGuideline}
 2. Explain WHY the correct answer is correct
 3. Be direct and to the point - no unnecessary details
 4. Must be factually accurate based on standard undergraduate-level science
@@ -538,6 +559,7 @@ ZERO-TOLERANCE FIX RULES
 ❌ If correctAnswerText not found among options → FIX IT.
 ❌ If explanation contradicts the answer → FIX one to match the other.
 ❌ If correct answer is scientifically wrong → CHANGE it to the correct option and adjust explanation.
+❌ If ALL options are wrong → REWRITE the options so one is clearly correct.
 ❌ If facts uncertain → OMIT speculation, keep only verified concepts.
 
 ====================================
@@ -787,7 +809,8 @@ async function generateWithMultiStage(
   try {
     allExplanations = await generateExplanationsForAllQuestions(
       questionsWithOptions,
-      topic
+      topic,
+      difficulty
     );
   } catch (error) {
     console.error("❌ Failed to generate all explanations:", error.message);
@@ -799,7 +822,8 @@ async function generateWithMultiStage(
       try {
         const singleExplanation = await generateSingleExplanation(
           questionsWithOptions[i],
-          topic
+          topic,
+          difficulty
         );
         allExplanations.push(singleExplanation);
       } catch (singleError) {
@@ -839,9 +863,55 @@ async function generateWithMultiStage(
   }
 
   // Stage 5: Verify and reconcile
-  const verifiedQuestions = factCheckedQuestions.map((q, i) =>
-    verifyAndReconcileQuestion(q, i)
-  );
+  const verifiedQuestions = [];
+  for (let i = 0; i < factCheckedQuestions.length; i++) {
+    const q = factCheckedQuestions[i];
+    try {
+      const verified = verifyAndReconcileQuestion(q, i);
+      verifiedQuestions.push(verified);
+    } catch (error) {
+      console.warn(
+        `⚠️ Question ${i + 1} failed verification: ${error.message}`
+      );
+
+      // Attempt to recover from specific errors
+      if (error.message.includes("duplicate options")) {
+        console.log(
+          `   🔄 Attempting to fix duplicate options for Question ${i + 1}...`
+        );
+        try {
+          // Regenerate options for this specific question
+          const fixedOptionsData = await generateOptionsForAllQuestions(
+            [q.question],
+            topic,
+            difficulty,
+            courseContext
+          );
+
+          if (fixedOptionsData && fixedOptionsData.length > 0) {
+            const fixedQ = {
+              ...q,
+              options: fixedOptionsData[0].options,
+              correctAnswerText: fixedOptionsData[0].correctAnswerText,
+            };
+
+            // Verify again
+            const verified = verifyAndReconcileQuestion(fixedQ, i);
+            verifiedQuestions.push(verified);
+            console.log(`   ✅ Successfully fixed Question ${i + 1}`);
+            continue; // Skip to next question
+          }
+        } catch (fixError) {
+          console.error(
+            `   ❌ Failed to fix Question ${i + 1}: ${fixError.message}`
+          );
+        }
+      }
+
+      // If we couldn't fix it or it was another error, we have to drop it
+      console.warn(`   🗑️ Dropping Question ${i + 1} due to validation failure`);
+    }
+  }
 
   // Log all questions for debugging
   console.log("\n" + "=".repeat(80));
