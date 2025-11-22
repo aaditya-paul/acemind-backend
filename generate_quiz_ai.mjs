@@ -40,17 +40,14 @@ async function generateQuestionsOnly(
   );
 
   const difficultyGuidelines = {
-    beginner:
-      "Focus on basic concepts, definitions, and fundamental understanding.",
+    beginner: "Basic concepts and definitions. Test fundamental recall.",
     intermediate:
-      "Include application of concepts, comparison between ideas, and understanding of relationships.",
-    advanced:
-      "Focus on synthesis, evaluation, and problem-solving requiring critical thinking.",
-    expert:
-      "Include complex scenarios, edge cases, and deep technical understanding requiring expert-level reasoning.",
+      "Application of concepts. Require analysis and comprehension.",
+    advanced: "Synthesis and evaluation. Critical thinking required.",
+    expert: "Complex scenarios. Deep technical understanding required.",
   };
 
-  const prompt = `Generate ONLY ${questionCount} clear, unambiguous quiz questions for the topic: "${topic}".
+  const prompt = `Generate ONLY ${questionCount} UNIQUE and CONCISE quiz questions for the topic: "${topic}".
 
 Difficulty Level: ${difficulty}
 Guidelines: ${
@@ -59,16 +56,18 @@ Guidelines: ${
 
 ${courseContext ? `Course Context:\n${courseContext}\n` : ""}
 
-Requirements:
-1. Each question should be clear and test ${difficulty}-level understanding
-2. Questions should be diverse and cover different aspects of the topic
-3. Avoid trick questions or ambiguous wording
-4. Focus ONLY on creating high-quality questions - DO NOT include answers yet
+CRITICAL REQUIREMENTS:
+1. Keep questions SHORT and DIRECT (maximum 15-20 words)
+2. Each question should be clear and test ${difficulty}-level understanding
+3. Questions MUST be diverse and cover DIFFERENT aspects of the topic
+4. **ABSOLUTELY NO DUPLICATE QUESTIONS** - each question must be unique
+5. **ABSOLUTELY NO REPEATED CONCEPTS** 
+6. Focus ONLY on creating high-quality questions
 
-Return ONLY a valid JSON array of question strings:
+Return ONLY a valid JSON array of UNIQUE question strings:
 ["Question 1 text here?", "Question 2 text here?", ...]
 
-Generate EXACTLY ${questionCount} questions.`;
+Generate EXACTLY ${questionCount} UNIQUE, NON-REPETITIVE questions.`;
 
   const result = await retryWithBackoff(
     async () => await model.generateContent(prompt),
@@ -103,7 +102,38 @@ Generate EXACTLY ${questionCount} questions.`;
     console.warn(`   Trimming to ${questionCount} questions`);
   }
 
-  return questions.slice(0, questionCount).map((q) => String(q).trim());
+  const trimmedQuestions = questions
+    .slice(0, questionCount)
+    .map((q) => String(q).trim());
+
+  // Duplicate detection - check for repeated questions
+  const uniqueQuestions = new Set(
+    trimmedQuestions.map((q) => normalizeText(q))
+  );
+  if (uniqueQuestions.size !== trimmedQuestions.length) {
+    const duplicateCount = trimmedQuestions.length - uniqueQuestions.size;
+    console.warn(
+      `⚠️ Detected ${duplicateCount} duplicate question(s) - AI failed diversity requirement`
+    );
+
+    // Log duplicates for debugging
+    const seen = new Set();
+    trimmedQuestions.forEach((q, idx) => {
+      const normalized = normalizeText(q);
+      if (seen.has(normalized)) {
+        console.warn(`   ❌ Duplicate found: Q${idx + 1}: "${q}"`);
+      }
+      seen.add(normalized);
+    });
+
+    throw new Error(
+      `AI generated ${duplicateCount} duplicate question(s). Retrying for unique questions...`
+    );
+  }
+
+  console.log(`✅ All ${trimmedQuestions.length} questions are unique`);
+  console.log(trimmedQuestions);
+  return trimmedQuestions;
 }
 
 /**
@@ -148,14 +178,16 @@ Requirements for EACH question:
 1. Generate EXACTLY 4 distinct options
 2. Only ONE option should be correct
 3. Make incorrect options plausible but clearly wrong
-4. Ensure all options are roughly similar in length and complexity
-5. THINK CAREFULLY about which option is correct before deciding
-6. Double-check any numerical values, formulas, or technical details
+4. Keep options SHORT and CONCISE (5-10 words each, max 15 words)
+5. Ensure all options are roughly similar in length
+6. THINK CAREFULLY about which option is correct before deciding
+7. Double-check any numerical values, formulas, or technical details
 
 VERIFICATION STEP - Before finalizing:
 - Verify any numerical values against known constants
 - Ensure technical terminology is used correctly
 - Confirm the correct answer is unambiguous
+- Check that each option is concise and to the point
 
 Return ONLY a valid JSON array with this EXACT structure (one object per question):
 [
@@ -212,6 +244,7 @@ CRITICAL:
 
     // If we got more options, trim to correct count
     console.warn(`   Trimming to ${questions.length} option sets`);
+    console.log(dataArray);
   }
 
   // Only process up to the number of questions we have
@@ -282,17 +315,27 @@ After generating each explanation, THINK TWICE:
 - Would this explanation withstand peer review?
 
 Requirements for EACH explanation:
-1. Explain WHY the correct answer is correct
-2. Briefly explain why the other options are incorrect
-3. Include relevant concepts or formulas if applicable
-4. Keep it concise (2-4 sentences)
+1. Keep explanations VERY SHORT (1-2 sentences maximum, 20-30 words)
+2. Explain WHY the correct answer is correct (briefly)
+3. NO need to explain why other options are wrong (unless critical)
+4. Get straight to the point - no fluff or unnecessary details
+5. Include key concept/formula ONLY if essential
 
 FACTUAL ACCURACY REQUIREMENT:
 - Each explanation must be strictly correct based on standard undergraduate-level science.
 - Do NOT use uncertain phrases or add contradictory claims.
+- Be concise and direct.
+
+EXAMPLE GOOD EXPLANATIONS:
+✅ "Mitochondria produce ATP through cellular respiration."
+✅ "Merge sort uses divide-and-conquer with O(n log n) complexity."
+✅ "Entropy always increases in isolated systems per the second law."
+
+EXAMPLE TOO LONG (AVOID):
+❌ "The mitochondria is often called the powerhouse of the cell because it is responsible for producing adenosine triphosphate (ATP) through a process known as cellular respiration, which involves multiple stages including..."
 
 Return ONLY a valid JSON array of explanation strings in the SAME ORDER as the questions:
-[...", "...", "..."]
+["Brief explanation 1", "Brief explanation 2", ...]
 
 Generate EXACTLY ${questionsWithOptions.length} explanations.`;
 
@@ -383,11 +426,13 @@ VERIFICATION STEPS:
 3. Ensure reasoning is logically sound
 
 Requirements:
-1. Explain WHY the correct answer is correct
-2. Briefly explain why the other options are incorrect
-3. Include relevant concepts or formulas if applicable
-4. Keep it concise (2-4 sentences)
-5. Must be factually accurate based on standard undergraduate-level science`;
+1. Keep explanation VERY SHORT (1-2 sentences, 20-30 words maximum)
+2. Explain WHY the correct answer is correct
+3. Be direct and to the point - no unnecessary details
+4. Must be factually accurate based on standard undergraduate-level science
+5. Include key concept/formula ONLY if essential
+
+EXAMPLE: "Mitochondria produce ATP through cellular respiration." (7 words - perfect!)`;
 
   const result = await retryWithBackoff(
     async () => await model.generateContent(prompt),
@@ -405,7 +450,216 @@ Requirements:
 }
 
 /**
- * Stage 4: Verify and reconcile
+ * Stage 4: AI-Powered Fact-Checking and Correction (Mini-Batch Processing)
+ * Processes questions in batches of 5 for better focus and accuracy
+ * Uses centralized config for model and temperature
+ */
+async function factCheckAndCorrectQuestions(
+  questionsWithAnswers,
+  topic,
+  difficulty
+) {
+  const stageConfig = getQuizStageConfig("fact-check");
+  const BATCH_SIZE = 5; // Process 5 questions at a time
+
+  console.log(
+    `\n🔍 Stage 4 (Fact-Checking): AI validation of ${questionsWithAnswers.length} questions...`
+  );
+  console.log(
+    `   Using ${stageConfig.model} (temp: ${stageConfig.temperature})`
+  );
+  console.log(`   Processing in mini-batches of ${BATCH_SIZE} questions`);
+
+  const model = genAI.getGenerativeModel({
+    model: stageConfig.model,
+    generationConfig: {
+      temperature: stageConfig.temperature,
+    },
+  });
+
+  // Split questions into mini-batches
+  const batches = [];
+  for (let i = 0; i < questionsWithAnswers.length; i += BATCH_SIZE) {
+    batches.push(questionsWithAnswers.slice(i, i + BATCH_SIZE));
+  }
+
+  console.log(`   Split into ${batches.length} batches`);
+
+  // Process each batch
+  const allCorrectedQuestions = [];
+  let totalCorrections = 0;
+
+  for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+    const batch = batches[batchIndex];
+    const batchNum = batchIndex + 1;
+
+    console.log(
+      `   📦 Processing batch ${batchNum}/${batches.length} (${batch.length} questions)...`
+    );
+
+    const questionsJSON = JSON.stringify(batch, null, 2);
+
+    const prompt = `You are a STRICT FACT-CHECKING AI specializing in science education.
+Your role is to VALIDATE and CORRECT quiz questions with zero tolerance for factual, logical, or formatting errors.
+
+====================================
+INPUT DETAILS
+====================================
+Topic: "${topic}"
+Difficulty: ${difficulty}
+
+QUESTIONS TO REVIEW (JSON):
+${questionsJSON}
+
+Each item contains:
+{
+  "question": "...",
+  "options": ["A", "B", "C", "D"],
+  "correctAnswerText": "...",
+  "explanation": "..."
+}
+
+====================================
+YOUR MANDATE
+====================================
+You must carefully review every question and:
+1. ✅ **Verify factual accuracy** of the correct answer and explanation.
+2. ✅ **Correct** any inaccurate or misleading statements.
+3. ✅ **Ensure consistency**:
+   - correctAnswerText MUST match exactly one of the options (character-for-character).
+   - Explanation MUST support the marked correct answer.
+4. ✅ **Replace hallucinations** with verified textbook facts.
+5. ✅ **Check numerics/formulas** (e.g., constants, wavelengths, energy levels) against standard values.
+6. ✅ **Standardize wording** (e.g., use “electron diffraction” or “Davisson–Germer experiment,” not both).
+
+====================================
+ZERO-TOLERANCE FIX RULES
+====================================
+❌ If correctAnswerText not found among options → FIX IT.
+❌ If explanation contradicts the answer → FIX one to match the other.
+❌ If correct answer is scientifically wrong → CHANGE it to the correct option and adjust explanation.
+❌ If facts uncertain → OMIT speculation, keep only verified concepts.
+
+====================================
+REQUIRED OUTPUT FORMAT
+====================================
+Return a valid JSON array where each object has this EXACT structure:
+[
+  {
+    "question": "Final corrected question (≤20 words)",
+    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "correctAnswerText": "EXACT text of correct option",
+    "explanation": "Final verified explanation (≤25 words)",
+    "corrected": true/false,
+    "corrections": "Summary of changes or 'No corrections needed'"
+  }
+]
+
+OUTPUT ONLY JSON, NOTHING ELSE.
+Ensure JSON is valid and every correction follows scientific consensus.
+`;
+
+    const result = await retryWithBackoff(
+      async () => await model.generateContent(prompt),
+      `Stage 4: Fact-Checking (Batch ${batchNum}/${batches.length})`
+    );
+
+    let text = result.response
+      .text()
+      .replace(/```json\n?/g, "")
+      .replace(/```\n?/g, "")
+      .trim();
+
+    const correctedBatch = JSON.parse(text);
+
+    if (
+      !Array.isArray(correctedBatch) ||
+      correctedBatch.length !== batch.length
+    ) {
+      console.warn(
+        `   ⚠️ Batch ${batchNum} fact-checker returned ${
+          correctedBatch?.length || 0
+        } questions, expected ${batch.length}`
+      );
+      console.warn(`   Using original batch without fact-checking`);
+      allCorrectedQuestions.push(...batch);
+      continue;
+    }
+
+    // Log corrections made in this batch
+    let batchCorrectionCount = 0;
+    correctedBatch.forEach((q, idx) => {
+      if (q.corrected && q.corrections !== "No corrections needed") {
+        batchCorrectionCount++;
+        const globalIdx = batchIndex * BATCH_SIZE + idx + 1;
+        console.log(`      ⚠️ Q${globalIdx} corrected: ${q.corrections}`);
+      }
+    });
+
+    if (batchCorrectionCount > 0) {
+      console.log(
+        `   ✅ Batch ${batchNum} made ${batchCorrectionCount} corrections`
+      );
+      totalCorrections += batchCorrectionCount;
+    } else {
+      console.log(`   ✅ Batch ${batchNum} verified - no corrections needed`);
+    }
+
+    // Add corrected batch to results
+    const cleanedBatch = correctedBatch.map((q) => ({
+      question: q.question,
+      options: q.options,
+      correctAnswerText: q.correctAnswerText,
+      explanation: q.explanation,
+    }));
+
+    allCorrectedQuestions.push(...cleanedBatch);
+  } // End of batch loop
+
+  console.log(
+    `✅ All batches complete: ${allCorrectedQuestions.length} questions validated`
+  );
+  if (totalCorrections > 0) {
+    console.log(`   Total corrections made: ${totalCorrections}`);
+  } else {
+    console.log(`   No corrections needed - all questions verified`);
+  }
+
+  // Final duplicate check after fact-checking
+  const uniqueAfterFactCheck = new Set(
+    allCorrectedQuestions.map((q) => normalizeText(q.question))
+  );
+  if (uniqueAfterFactCheck.size !== allCorrectedQuestions.length) {
+    const duplicateCount =
+      allCorrectedQuestions.length - uniqueAfterFactCheck.size;
+    console.warn(
+      `⚠️ Warning: ${duplicateCount} duplicate(s) found after fact-checking`
+    );
+
+    // Remove duplicates, keeping first occurrence
+    const seen = new Set();
+    const dedupedQuestions = allCorrectedQuestions.filter((q) => {
+      const normalized = normalizeText(q.question);
+      if (seen.has(normalized)) {
+        console.warn(`   🗑️ Removing duplicate: "${q.question}"`);
+        return false;
+      }
+      seen.add(normalized);
+      return true;
+    });
+
+    console.log(
+      `   ✅ Removed duplicates: ${dedupedQuestions.length} unique questions remaining`
+    );
+    return dedupedQuestions;
+  }
+
+  console.log(`✅ No duplicates detected - all questions are unique`);
+  return allCorrectedQuestions;
+}
+
+/**
+ * Stage 5: Verify and reconcile (after fact-checking)
  */
 function verifyAndReconcileQuestion(questionData, index) {
   const { question, options, correctAnswerText, explanation } = questionData;
@@ -448,6 +702,15 @@ function verifyAndReconcileQuestion(questionData, index) {
 
 /**
  * Generate quiz questions using multi-stage approach
+ *
+ * Pipeline:
+ * Stage 1: Generate Questions (gemini-2.5-flash-lite, temp 0.2)
+ * Stage 2: Generate Options (gemini-2.5-flash, temp 0.1)
+ * Stage 3: Generate Explanations (gemini-2.5-flash, temp 0.1)
+ * Stage 4: AI Fact-Check & Correct (gemini-2.5-flash-lite, temp 0.05) ⭐ NEW
+ * Stage 5: Final Validation (code-based)
+ *
+ * All stages tracked in analytics with token counting and cost calculation
  */
 async function generateWithMultiStage(
   topic,
@@ -559,8 +822,24 @@ async function generateWithMultiStage(
       allExplanations[i] || `The correct answer is "${q.correctAnswerText}".`,
   }));
 
-  // Stage 4: Verify and reconcile
-  const verifiedQuestions = questionsWithAnswers.map((q, i) =>
+  // Stage 4: AI Fact-Checking and Correction
+  let factCheckedQuestions;
+  try {
+    factCheckedQuestions = await factCheckAndCorrectQuestions(
+      questionsWithAnswers,
+      topic,
+      difficulty
+    );
+  } catch (error) {
+    console.warn(
+      "⚠️ Fact-checking failed, using original questions:",
+      error.message
+    );
+    factCheckedQuestions = questionsWithAnswers;
+  }
+
+  // Stage 5: Verify and reconcile
+  const verifiedQuestions = factCheckedQuestions.map((q, i) =>
     verifyAndReconcileQuestion(q, i)
   );
 
@@ -612,22 +891,21 @@ export async function GenerateQuizQuestions(
     const model = genAI.getGenerativeModel({
       model: modelName,
       generationConfig: {
-        temperature: 0.7,
+        temperature: 0.2, // REDUCED: More factual and consistent
         // maxOutputTokens: 4096,
       },
     });
 
-    console.log(`🎯 Single-Stage Quiz Generation: Using ${modelName}`);
+    console.log(
+      `🎯 Single-Stage Quiz Generation: Using ${modelName} (temp: 0.2)`
+    );
 
     const difficultyGuidelines = {
-      beginner:
-        "Focus on basic concepts, definitions, and fundamental understanding. Questions should be straightforward and test recall of key information.",
+      beginner: "Basic concepts and definitions. Test fundamental recall.",
       intermediate:
-        "Include application of concepts, comparison between ideas, and understanding of relationships. Questions should require analysis and comprehension.",
-      advanced:
-        "Focus on synthesis, evaluation, and problem-solving. Questions should require critical thinking and ability to apply knowledge in new contexts.",
-      expert:
-        "Include complex scenarios, edge cases, and deep technical understanding. Questions should challenge mastery-level knowledge and require expert-level reasoning.",
+        "Application of concepts. Require analysis and comprehension.",
+      advanced: "Synthesis and evaluation. Critical thinking required.",
+      expert: "Complex scenarios. Deep technical understanding required.",
     };
 
     const prompt = `Generate ${questionCount} multiple-choice quiz questions for the topic: "${topic}".
@@ -640,25 +918,35 @@ Guidelines: ${
 ${courseContext ? `Course Context:\n${courseContext}\n` : ""}
 
 Requirements:
-1. Each question should be clear, concise, and unambiguous
-2. Provide exactly 4 options labeled A, B, C, D
+1. Keep questions SHORT (maximum 15-20 words)
+2. Provide exactly 4 options - each option SHORT (5-10 words)
 3. Only ONE option should be correct
 4. Difficulty should strictly match the ${difficulty} level
 5. Questions should be diverse and cover different aspects of the topic
-6. Include a brief, educational explanation for the correct answer
+6. Include a VERY SHORT explanation (1-2 sentences, 20-30 words max)
 7. Avoid trick questions or ambiguous wording
 8. Make incorrect options plausible but clearly wrong
+9. NO long scenarios - get straight to the point
 
 Return ONLY a valid JSON array with this EXACT structure (no additional text):
 [
   {
-    "question": "Question text here",
-    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "question": "SHORT question (15-20 words max)",
+    "options": ["Short option A", "Short option B", "Short option C", "Short option D"],
     "correctAnswer": 0,
-    "correctAnswerText": "Option A",
-    "explanation": "Brief explanation of why this is correct and why others are wrong"
+    "correctAnswerText": "Short option A",
+    "explanation": "Very short explanation (1-2 sentences, 20-30 words max)"
   }
 ]
+
+EXAMPLE:
+{
+  "question": "What is the primary function of mitochondria?",
+  "options": ["Protein synthesis", "ATP production", "DNA replication", "Lipid storage"],
+  "correctAnswer": 1,
+  "correctAnswerText": "ATP production",
+  "explanation": "Mitochondria produce ATP through cellular respiration."
+}
 
 CRITICAL REQUIREMENTS FOR correctAnswer:
 - correctAnswer MUST be the INDEX (0-3) of the correct option in the options array
@@ -787,11 +1075,54 @@ Before returning, verify that options[correctAnswer] === correctAnswerText for e
       };
     });
 
+    // Fact-check the generated questions
+    console.log("\n🔍 Running AI fact-checker...");
+    const questionsForFactCheck = validatedQuestions.map((q) => ({
+      question: q.question,
+      options: q.options,
+      correctAnswerText: q.options[q.correctAnswer],
+      explanation: q.explanation,
+    }));
+
+    let factCheckedData;
+    try {
+      factCheckedData = await factCheckAndCorrectQuestions(
+        questionsForFactCheck,
+        topic,
+        difficulty
+      );
+    } catch (error) {
+      console.warn(
+        "⚠️ Fact-checking failed, using original questions:",
+        error.message
+      );
+      factCheckedData = questionsForFactCheck;
+    }
+
+    // Merge fact-checked data back
+    const finalQuestions = validatedQuestions.map((q, idx) => {
+      const factChecked = factCheckedData[idx];
+
+      // Find correct answer index from fact-checked data
+      const correctIndex = factChecked.options.findIndex(
+        (opt) =>
+          normalizeText(opt) === normalizeText(factChecked.correctAnswerText)
+      );
+
+      return {
+        question: factChecked.question,
+        options: factChecked.options,
+        correctAnswer: correctIndex !== -1 ? correctIndex : q.correctAnswer,
+        explanation: factChecked.explanation,
+        difficulty: difficulty,
+      };
+    });
+
     // Log all questions for debugging
     console.log("\n" + "=".repeat(80));
-    console.log("GENERATED QUIZ QUESTIONS");
+    console.log("GENERATED QUIZ QUESTIONS (FACT-CHECKED)");
     console.log("=".repeat(80));
-    validatedQuestions.forEach((q, idx) => {
+    finalQuestions.forEach((q, idx) => {
       console.log(`\nQuestion ${idx + 1}: ${q.question}`);
       q.options.forEach((opt, optIdx) => {
         const marker = optIdx === q.correctAnswer ? "✅" : " ";
@@ -804,7 +1135,7 @@ Before returning, verify that options[correctAnswer] === correctAnswerText for e
     });
     console.log("=".repeat(80) + "\n");
 
-    return validatedQuestions;
+    return finalQuestions;
   } catch (error) {
     console.error("❌ Error in GenerateQuizQuestions:", error);
     throw error;

@@ -96,7 +96,7 @@ export const MODEL_PRICING = {
 export const SERVICE_MODEL_MAP = {
   // CRITICAL ACCURACY SERVICES - Quiz Generation (Multi-Stage)
   "generate-quiz": {
-    model: "gemini-2.5-flash",
+    model: "gemini-2.5-flash-lite",
     reason: "Quiz questions MUST be factually correct",
     accuracy: "critical",
     stages: {
@@ -104,19 +104,25 @@ export const SERVICE_MODEL_MAP = {
       questions: {
         model: "gemini-2.5-flash-lite",
         temperature: 0.7,
-        reason: "Generate clear, diverse questions",
+        reason: "Generate clear, concise questions",
       },
       // Stage 2: Generate options for all questions (batched)
       options: {
-        model: "gemini-2.5-flash",
-        temperature: 0.3,
+        model: "gemini-2.5-flash-lite",
+        temperature: 0.7,
         reason: "Generate accurate multiple-choice options",
       },
       // Stage 3: Generate explanations for all questions (batched)
       explanations: {
-        model: "gemini-2.5-flash",
-        temperature: 0.3,
-        reason: "Generate educational explanations",
+        model: "gemini-2.5-flash-lite",
+        temperature: 0.7,
+        reason: "Generate brief, to-the-point explanations",
+      },
+      // Stage 4: AI fact-checking and correction (NEW)
+      "fact-check": {
+        model: "gemini-2.5-flash-lite",
+        temperature: 0.15, // ULTRA-LOW: Maximum accuracy for validation
+        reason: "Verify and correct all questions for accuracy",
       },
     },
   },
