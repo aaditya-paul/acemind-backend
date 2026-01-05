@@ -14,7 +14,15 @@ export const USD_TO_INR = 88.58;
  * All prices are per 1 Million tokens
  */
 export const MODEL_PRICING = {
-  // Gemini 2.5 Models - Latest Generation (Highest Accuracy)
+  // Gemini 3 Models - Latest Generation (Highest Accuracy)
+  "gemini-3-flash-preview": {
+    input: 0.3, // $0.30 per 1M tokens
+    output: 2.5, // $2.50 per 1M tokens
+    description: "Flash 3 - Hybrid Reasoning, 1M context",
+    tier: "premium",
+    contextWindow: 1_000_000,
+  },
+  // Gemini 2.5 Models
   "gemini-2.5-flash": {
     input: 0.3, // $0.30 per 1M tokens
     output: 2.5, // $2.50 per 1M tokens
@@ -96,31 +104,31 @@ export const MODEL_PRICING = {
 export const SERVICE_MODEL_MAP = {
   // CRITICAL ACCURACY SERVICES - Quiz Generation (Multi-Stage)
   "generate-quiz": {
-    model: "gemini-2.5-flash-lite",
+    model: "gemini-3-flash-preview",
     reason: "Quiz questions MUST be factually correct",
     accuracy: "critical",
     stages: {
       // Stage 1: Generate questions only
       questions: {
-        model: "gemini-2.5-flash-lite",
+        model: "gemini-3-flash-preview",
         temperature: 0.7,
         reason: "Generate clear, concise questions",
       },
       // Stage 2: Generate options for all questions (batched)
       options: {
-        model: "gemini-2.5-flash",
+        model: "gemini-3-flash-preview",
         temperature: 0.3,
         reason: "Generate accurate multiple-choice options",
       },
       // Stage 3: Generate explanations for all questions (batched)
       explanations: {
-        model: "gemini-2.5-flash",
+        model: "gemini-3-flash-preview",
         temperature: 0.3,
         reason: "Generate brief, to-the-point explanations",
       },
       // Stage 4: AI fact-checking and correction (NEW)
       "fact-check": {
-        model: "gemini-2.5-flash", // Upgraded from lite for better reasoning
+        model: "gemini-3-flash-preview", // Upgraded from lite for better reasoning
         temperature: 0.1, // ULTRA-LOW: Maximum accuracy for validation
         reason: "Verify and correct all questions for accuracy",
       },
@@ -129,7 +137,7 @@ export const SERVICE_MODEL_MAP = {
 
   // Practice questions (non-quiz format)
   "practice-questions": {
-    model: "gemini-2.5-flash-lite",
+    model: "gemini-3-flash-preview",
     reason: "Practice questions need good accuracy",
     accuracy: "high",
   },
@@ -141,7 +149,7 @@ export const SERVICE_MODEL_MAP = {
     accuracy: "high",
   },
   syllabus: {
-    model: "gemini-2.5-flash-lite",
+    model: "gemini-2.5-flash",
     reason: "Syllabus parsing needs accuracy",
     accuracy: "high",
   },
